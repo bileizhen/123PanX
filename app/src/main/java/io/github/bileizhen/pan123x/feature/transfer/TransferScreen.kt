@@ -18,6 +18,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
+import io.github.bileizhen.pan123x.core.transfer.storage.LocalDownloadFiles
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -263,9 +267,14 @@ fun TransferDetailScreen(viewModel: TransferViewModel, taskId: String) {
     val uiText = io.github.bileizhen.pan123x.ui.util.rememberUiTranslator()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val task = state.tasks.firstOrNull { it.taskId == taskId }
+    val context = LocalContext.current
+    val localFiles = remember(context) { LocalDownloadFiles(context) }
+    val scope = rememberCoroutineScope()
+    var fileActionBusy by remember(task?.accountId, taskId) { mutableStateOf(false) }
+    var fileActionError by remember(task?.accountId, taskId) { mutableStateOf<String?>(null) }
     LazyColumn(
         Modifier.fillMaxSize().testTag("transfer-detail"),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = LocalContentBottomPadding.current + 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item { PageHeading("任务详情", "上传与下载共用的任务视图") }
@@ -281,13 +290,35 @@ fun TransferDetailScreen(viewModel: TransferViewModel, taskId: String) {
                     onResume = { viewModel.resume(task.taskId) },
                 )
             }
+            if (task.direction == TransferDirection.DOWNLOAD && task.state == TransferState.COMPLETED) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            listOf(false to "打开文件", true to "分享文件").forEach { (share, label) ->
+                                TextButton(uiText(label), enabled = !fileActionBusy,
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                        .testTag(if (share) "download_share_file" else "download_open_file"),
+                                    onClick = {
+                                        fileActionBusy = true
+                                        fileActionError = null
+                                        scope.launch {
+                                            try { fileActionError = localFiles.launch(task, share) }
+                                            finally { fileActionBusy = false }
+                                        }
+                                    })
+                            }
+                        }
+                        fileActionError?.let { Text(uiText(it), modifier = Modifier.testTag("download_file_error")) }
+                    }
+                }
+            }
             item { InfoCard(task, state.speeds[task.taskId] ?: 0L, viewModel) }
             item {
                 // observeParts 按 (accountId, taskId) 订阅：accountId 从任务行取，VM 不依赖 AccountManager。
                 val parts by remember(task.accountId, task.taskId) {
                     viewModel.observeParts(task.accountId, task.taskId)
                 }.collectAsStateWithLifecycle(initialValue = emptyList())
-                PartsCard(task.direction, parts)
+                PartsCard(task, parts)
             }
             if (task.state != TransferState.COMPLETED && task.state != TransferState.CANCELED) {
                 item {
@@ -344,47 +375,55 @@ private fun InfoCard(task: TransferTaskEntity, speed: Long, viewModel: TransferV
 }
 
 @Composable
-private fun PartsCard(direction: TransferDirection, parts: List<TransferPartView>) {
+private fun PartsCard(task: TransferTaskEntity, recordedParts: List<TransferPartView>) {
     val uiText = io.github.bileizhen.pan123x.ui.util.rememberUiTranslator()
+    val download = task.direction == TransferDirection.DOWNLOAD
+    // Completed task bytes are authoritative for records saved before progress mirroring was fixed.
+    val parts = if (download && task.state == TransferState.COMPLETED) recordedParts.map {
+        it.copy(transferred = it.size, done = true)
+    } else recordedParts
     val primary = MiuixTheme.colorScheme.primary
-    val partial = primary.copy(alpha = 0.45f)
     val muted = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.12f)
-    val columns = 16
+    val columns = minOf(16, parts.size.coerceAtLeast(1))
     val rows = ((parts.size + columns - 1) / columns).coerceAtLeast(1)
-    Card(Modifier.fillMaxWidth(), cornerRadius = 24.dp, insideMargin = PaddingValues(20.dp)) {
+    Card(Modifier.fillMaxWidth().testTag("transfer_parts"), cornerRadius = 24.dp, insideMargin = PaddingValues(20.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(
-                if (direction == TransferDirection.DOWNLOAD) "分段进度" else "分片进度",
-                fontWeight = FontWeight.Bold,
-            )
+            Text(if (download) "分段进度" else "分片进度", fontWeight = FontWeight.Bold)
             if (parts.isEmpty()) {
-                Text(
-                    uiText("任务开始后这里会显示实时进度。"),
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    fontSize = 12.sp,
-                )
+                val message = when (task.state) {
+                    TransferState.COMPLETED -> "传输已完成，暂无分段记录"
+                    TransferState.CANCELED -> "任务已取消"
+                    TransferState.FAILED -> "任务失败，暂无分段记录"
+                    TransferState.PAUSED, TransferState.WAITING_NETWORK -> "任务已停止，恢复后显示分段进度"
+                    else -> "正在准备分段，开始传输后显示实时进度"
+                }
+                Text(uiText(message), color = MiuixTheme.colorScheme.onSurfaceVariantSummary, fontSize = 12.sp)
             } else {
-                // 分片点阵：沿用 M4 下载详情的点阵思路，上传/下载统一消费 TransferPartView。
-                Canvas(Modifier.fillMaxWidth().aspectRatio(columns.toFloat() / rows)) {
+                Canvas(Modifier.fillMaxWidth().height((rows * 20).dp)) {
                     val gap = 5.dp.toPx()
-                    val side = (size.width - (columns - 1) * gap) / columns
+                    val width = (size.width - (columns - 1) * gap) / columns
+                    val height = 15.dp.toPx()
                     parts.forEachIndexed { position, part ->
-                        val x = (position % columns) * (side + gap)
-                        val y = (position / columns) * (side + gap)
-                        val color = when {
-                            part.done -> primary
-                            part.transferred > 0 -> partial
-                            else -> muted
-                        }
-                        drawRoundRect(color, Offset(x, y), Size(side, side), CornerRadius(3.dp.toPx()))
+                        val offset = Offset((position % columns) * (width + gap), (position / columns) * (height + gap))
+                        val fraction = if (part.done) 1f else if (part.size > 0) (part.transferred.toDouble() / part.size).toFloat().coerceIn(0f, 1f) else 0f
+                        drawRoundRect(muted, offset, Size(width, height), CornerRadius(3.dp.toPx()))
+                        if (fraction > 0f) drawRoundRect(primary, offset, Size(width * fraction, height), CornerRadius(3.dp.toPx()))
                     }
                 }
-                Text(
-                    "${parts.count { it.done }} / ${parts.size} " +
-                        if (direction == TransferDirection.DOWNLOAD) "个分段完成 · 浅色为进行中" else "个分片完成 · 浅色为进行中",
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    fontSize = 12.sp,
-                )
+                Text("${parts.count { it.done }} / ${parts.size} " + if (download) "个分段完成" else "个分片完成",
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary, fontSize = 12.sp)
+                // Download segments are bounded by the configured connection count. Show exact counters as well as the overview.
+                if (download) parts.forEach { part ->
+                    val percent = if (part.done) 100 else if (part.size > 0) (part.transferred.toDouble() * 100 / part.size).toInt().coerceIn(0, 100) else 0
+                    Column(Modifier.testTag("transfer_part_${part.index}"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("分段 ${part.index + 1}", fontSize = 12.sp)
+                            Text("$percent% · ${formatBytes(part.transferred)} / ${formatBytes(part.size)}", fontSize = 12.sp)
+                        }
+                        val animated by animateFloatAsState(percent / 100f, tween(250), label = "segment-${part.index}")
+                        LinearProgressIndicator(progress = animated, modifier = Modifier.fillMaxWidth())
+                    }
+                }
             }
         }
     }
