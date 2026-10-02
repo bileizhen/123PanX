@@ -36,7 +36,12 @@ internal fun UpdateDialog(viewModel: UpdateViewModel) {
             is UpdateResult.Failed -> result.message
             null -> "正在检查更新…"
         }
-        Text(if (state.checking) uiText("正在检查更新…") else if (available != null) message else uiText(message), modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()).testTag("update_message"))
+        val notesModifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()).testTag("update_message")
+        if (available != null && !state.checking) {
+            MarkdownText(stripVersionHeadings(available.release.version, message), modifier = notesModifier)
+        } else {
+            Text(uiText(if (state.checking) "正在检查更新…" else message), modifier = notesModifier)
+        }
         if (available != null && !state.checking) {
             Spacer(Modifier.height(12.dp))
             OverlaySpinnerPreference(title = uiText("下载源"), items = UpdateSource.entries.map { DropdownItem(uiText(it.label)) },

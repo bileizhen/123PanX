@@ -24,7 +24,7 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 @RunWith(AndroidJUnit4::class)
 class UpdateFlowTest {
     @get:Rule val compose = createComposeRule()
-    private val release = AppRelease("1.0.0", "新增更新组件\n支持 GitHub 与镜像下载\n下载后请求系统安装", "https://github.com/bileizhen/123PanX/releases/tag/v1.0.0", "https://github.com/bileizhen/123PanX/releases/download/v1.0.0/123PanX-1.0.0.apk", 100, "a".repeat(64))
+    private val release = AppRelease("1.0.0", "## 1.0.0\n### Markdown 更新说明\n\n- 修复 **密码登录**，保留 `123PanX.apk`\n- 支持 [GitHub](https://github.com/bileizhen/123PanX)\n\n1. 下载更新\n2. 请求系统安装\n\n> 保留账户数据\n\n```text\nSHA-256 verified\n```", "https://github.com/bileizhen/123PanX/releases/tag/v1.0.0", "https://github.com/bileizhen/123PanX/releases/download/v1.0.0/123PanX-1.0.0.apk", 100, "a".repeat(64))
     private val installer = object : UpdateInstall {
         override fun canInstall() = false
         override suspend fun request(file: File, release: AppRelease) = UpdateInstallResult.PERMISSION_REQUIRED
@@ -80,6 +80,27 @@ class UpdateFlowTest {
             assertEquals(0, intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             assertEquals("provider fixture", context.contentResolver.openInputStream(intent.data!!)!!.bufferedReader().use { it.readText() })
         } finally { file.delete() }
+    }
+    @Test fun markdownNotesRenderInBothThemesWhileDownloadControlsStayVisible() {
+        val store = ViewModelStore()
+        val vm = UpdateViewModel(UpdateChecker { UpdateResult.Available(release) }, UpdateDownload { _, _, _ -> error("Not downloaded") }, installer)
+        store.put("update", vm)
+        val theme = androidx.compose.runtime.mutableStateOf(ThemeMode.LIGHT)
+        try {
+            compose.setContent { PanXTheme(AppSettings(themeMode = theme.value, monet = false)) { Scaffold { Box(Modifier.fillMaxSize()) { UpdateDialog(vm) } } } }
+            compose.runOnIdle { vm.checkAtStartup(true) }
+            compose.waitUntil(5_000) { vm.state.value.visible && !vm.state.value.checking }
+            compose.mainClock.advanceTimeBy(600)
+            for (mode in listOf(ThemeMode.LIGHT, ThemeMode.DARK)) {
+                compose.runOnIdle { theme.value = mode }
+                compose.onNodeWithText("Markdown 更新说明").assertIsDisplayed()
+                compose.onNodeWithText("修复 密码登录，保留 123PanX.apk").assertIsDisplayed()
+                compose.onNodeWithText("### Markdown 更新说明").assertDoesNotExist()
+                compose.onNodeWithText("## 1.0.0").assertDoesNotExist()
+                compose.onNodeWithTag("update_download").assertIsDisplayed().assertIsEnabled()
+                capture("markdown-${mode.name.lowercase()}")
+            }
+        } finally { compose.runOnIdle { store.clear() } }
     }
     private fun capture(name: String) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
