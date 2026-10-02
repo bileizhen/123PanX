@@ -155,6 +155,8 @@ fun SettingsScreen(
                     modifier = Modifier.testTag("setting_text_preview"))
                 io.github.bileizhen.pan123x.ui.component.SuperSwitch(uiText("识别剪贴板分享链接"), settings.recognizeShareClipboard,
                     { value -> viewModel.edit { it.copy(recognizeShareClipboard = value) } }, summary = uiText("回到应用时提示打开 123 云盘分享"), tag = "setting_share_clipboard")
+                SuperSwitch(uiText("启动时自动检查更新"), settings.autoCheckUpdates,
+                    { value -> viewModel.edit { it.copy(autoCheckUpdates = value) } }, summary = uiText("只检查 GitHub 正式版，发现更新时提示"), tag = "setting_auto_updates")
             }
         }
         item { SmallTitle(uiText("维护"), insideMargin = SectionTitleMargin) }

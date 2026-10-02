@@ -26,7 +26,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.core.net.toUri
 import coil3.compose.SubcomposeAsyncImage
 import io.github.bileizhen.pan123x.core.account.SessionState
 import io.github.bileizhen.pan123x.ui.util.formatBytes
@@ -55,8 +54,6 @@ import io.github.bileizhen.pan123x.ui.component.LocalPageActive
 fun AccountScreen(viewModel: AccountViewModel, onOpen: (String) -> Unit, updates: io.github.bileizhen.pan123x.feature.about.UpdateViewModel? = null) {
     val uiText = io.github.bileizhen.pan123x.ui.util.rememberUiTranslator()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var updateLinkError by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
     val bottomPadding = LocalContentBottomPadding.current
     val active = LocalPageActive.current
     LaunchedEffect(active, (state.session as? SessionState.Ready)?.accountId) {
@@ -101,17 +98,6 @@ fun AccountScreen(viewModel: AccountViewModel, onOpen: (String) -> Unit, updates
                 ArrowPreference(title = uiText("关于"), summary = "123PanX", onClick = { onOpen("about") }, modifier = Modifier.testTag("account_about"))
             }
         }
-    }
-    updates?.let { updateVm ->
-        io.github.bileizhen.pan123x.feature.about.UpdateDialog(updateVm) { link ->
-            try { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, link.toUri())) }
-            catch (_: android.content.ActivityNotFoundException) { updateLinkError = "当前设备没有可打开链接的应用" }
-            catch (_: SecurityException) { updateLinkError = "无法打开链接，请检查系统设置" }
-        }
-    }
-    SuperDialog(show = updateLinkError != null, title = uiText("无法打开链接"), onDismissRequest = { updateLinkError = null }) {
-        Text(uiText(updateLinkError.orEmpty()))
-        TextButton(uiText("关闭"), onClick = { updateLinkError = null })
     }
     // 退出登录与删除同类：不可逆操作必须二次确认。
     SuperDialog(

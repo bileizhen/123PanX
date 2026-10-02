@@ -364,4 +364,23 @@
     <string name="ui_4f55ee1e68">Details</string>
     <string name="ui_318bb3899b">Move to</string>
     <string name="ui_a8478c1e6c">Copy to</string>
+    <string name="ui_update_title">Update available</string>
+    <string name="ui_update_source">Download source</string>
+    <string name="ui_update_github">GitHub</string>
+    <string name="ui_update_mirror">gh.dpik.top mirror</string>
+    <string name="ui_update_startup">Check for updates at startup</string>
+    <string name="ui_update_startup_summary">Check stable GitHub releases and notify when an update is available</string>
+    <string name="ui_update_debug">This is a debug build. The stable app installs separately and requires signing in again.</string>
+    <string name="ui_update_verified">Download complete. Package verified.</string>
+    <string name="ui_update_cancel">Cancel download</string>
+    <string name="ui_update_install">Install</string>
+    <string name="ui_update_installing">Requesting installation…</string>
+    <string name="ui_update_download">Download update</string>
+    <string name="ui_update_retry">Retry download</string>
+    <string name="ui_update_permission">Allow installation from this app. Installation will continue when you return.</string>
+    <string name="ui_update_download_failure">Download or verification failed. Retry or choose another source.</string>
+    <string name="ui_update_check_failure">Update check failed. Try again later.</string>
+    <string name="ui_update_install_failure">Could not request installation. Try again.</string>
+    <string name="ui_update_new">A new version is available.</string>
+    <string name="ui_update_size">Package</string>
 </resources>

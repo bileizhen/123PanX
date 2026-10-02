@@ -26,6 +26,7 @@ class PanXTestApplication : PanXApplication() {
             database = Room.inMemoryDatabaseBuilder(this, AppDatabase::class.java).build(),
             preferencesPrefix = "instrumentation-${System.nanoTime()}-",
             restoreCredentials = false,
+            automaticUpdates = false,
             apiClient = localClient(),
             transferClient = localClient(),
             qrClient = localClient(),

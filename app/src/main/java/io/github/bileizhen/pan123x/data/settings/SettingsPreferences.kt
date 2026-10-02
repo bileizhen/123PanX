@@ -21,6 +21,7 @@ object SettingsPreferences {
     private val downloadConnections = intPreferencesKey("download_connections")
     private val downloadTree = stringPreferencesKey("download_tree")
     private val shareClipboard = booleanPreferencesKey("recognize_share_clipboard")
+    private val autoUpdates = booleanPreferencesKey("auto_check_updates")
     private val askLocation = booleanPreferencesKey("ask_download_location")
     private val multiThread = booleanPreferencesKey("multi_thread_download")
     private val uploadThreads = intPreferencesKey("upload_threads")
@@ -44,6 +45,7 @@ object SettingsPreferences {
         downloadConnections = preferences[downloadConnections] ?: 4,
         downloadTree = preferences[downloadTree].orEmpty(),
         recognizeShareClipboard = preferences[shareClipboard] ?: true,
+        autoCheckUpdates = preferences[autoUpdates] ?: true,
         askDownloadLocation = preferences[askLocation] ?: false,
         multiThreadDownload = preferences[multiThread] ?: true,
         uploadThreads = preferences[uploadThreads] ?: 1,
@@ -70,6 +72,7 @@ object SettingsPreferences {
         preferences[downloadConnections] = settings.downloadConnections
         preferences[downloadTree] = settings.downloadTree
         preferences[shareClipboard] = settings.recognizeShareClipboard
+        preferences[autoUpdates] = settings.autoCheckUpdates
         preferences[maxTextPreviewBytes] = settings.maxTextPreviewBytes
         preferences[askLocation] = settings.askDownloadLocation
         preferences[multiThread] = settings.multiThreadDownload

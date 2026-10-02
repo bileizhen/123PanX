@@ -8,6 +8,7 @@ import io.github.bileizhen.pan123x.core.logging.AppLogger
 import io.github.bileizhen.pan123x.core.logging.LogSource
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +22,8 @@ class SettingsRepository(
     scope: CoroutineScope,
     private val logger: AppLogger,
 ) {
+    private val initialSettings = CompletableDeferred<AppSettings>()
+    suspend fun awaitLoaded(): AppSettings = initialSettings.await()
     val state: StateFlow<AppSettings> = dataStore.data
         .retryWhen { error, attempt ->
             if (error is IOException) {
@@ -35,7 +38,7 @@ class SettingsRepository(
                 false
             }
         }
-        .map(SettingsPreferences::read)
+        .map { SettingsPreferences.read(it).also { value -> initialSettings.complete(value) } }
         .stateIn(scope, SharingStarted.Eagerly, AppSettings())
 
     /** The transformation reads the latest disk snapshot inside DataStore's transaction. */

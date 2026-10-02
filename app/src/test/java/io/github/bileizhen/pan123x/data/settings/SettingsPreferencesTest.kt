@@ -19,7 +19,7 @@ class SettingsPreferencesTest {
         val requested = AppSettings(
             themeMode = ThemeMode.DARK, monet = false, uiScale = 1.15f,
             blur = false, floatingBar = false, liquidGlass = false, predictiveBack = false,
-            recognizeShareClipboard = false,
+            recognizeShareClipboard = false, autoCheckUpdates = false,
             askDownloadLocation = true, multiThreadDownload = false, uploadThreads = 3,
             maxConcurrentDownloads = 7, maxConcurrentUploads = 5,
             downloadSpeedLimit = 256 * 1024, uploadSpeedLimit = 128 * 1024,

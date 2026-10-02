@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
@@ -165,7 +166,16 @@ fun PanXApp(container: AppContainer) {
             AccountViewModel(container.authRepository, container.accountManager, container.database.accountDao().observeAccounts())
         })
         val settingsVm: SettingsViewModel = viewModel(factory = viewModelFactory { SettingsViewModel(container.settings, container.logger, container.proxySettings, container.maintenanceRepository) })
-        val updateVm: io.github.bileizhen.pan123x.feature.about.UpdateViewModel = viewModel(factory = viewModelFactory { io.github.bileizhen.pan123x.feature.about.UpdateViewModel(container.appUpdates) })
+        val updateVm: io.github.bileizhen.pan123x.feature.about.UpdateViewModel = viewModel(factory = viewModelFactory { io.github.bileizhen.pan123x.feature.about.UpdateViewModel(container.appUpdates, container.updateDownloader, container.updateInstaller) })
+        LaunchedEffect(updateVm) {
+            val stored = container.settings.awaitLoaded()
+            container.proxySettings.awaitLoaded()
+            updateVm.checkAtStartup(container.automaticUpdates && stored.autoCheckUpdates)
+        }
+        LifecycleResumeEffect(updateVm) {
+            updateVm.onResume()
+            onPauseOrDispose { }
+        }
         var showLogExport by rememberSaveable { mutableStateOf(false) }
         val recycleVm: RecycleViewModel = viewModel(factory = RecycleViewModel.Factory(container.recycleRepository))
         val backStack = rememberNavBackStack(Home)
@@ -401,6 +411,7 @@ fun PanXApp(container: AppContainer) {
                         },
                     )
                     io.github.bileizhen.pan123x.feature.logs.SendLogDialog(showLogExport, container.diagnosticReport) { showLogExport = false }
+                    io.github.bileizhen.pan123x.feature.about.UpdateDialog(updateVm)
                     io.github.bileizhen.pan123x.ui.component.ClipboardSharePrompt(settings.recognizeShareClipboard)
                     NavigationBackHandler(
                         state = rememberNavigationEventState(NavigationEventInfo.None),

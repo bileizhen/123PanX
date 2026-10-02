@@ -22,6 +22,7 @@ data class AppSettings(
     val downloadConnections: Int = 4,
     val downloadTree: String = "",
     val recognizeShareClipboard: Boolean = true,
+    val autoCheckUpdates: Boolean = true,
     val askDownloadLocation: Boolean = false,
     val multiThreadDownload: Boolean = true,
     val uploadThreads: Int = 1,

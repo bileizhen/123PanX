@@ -57,6 +57,7 @@ data class ContainerOverrides(
     val database: AppDatabase? = null,
     val preferencesPrefix: String = "",
     val restoreCredentials: Boolean = true,
+    val automaticUpdates: Boolean = true,
     val apiClient: OkHttpClient? = null,
     val transferClient: OkHttpClient? = null,
     val qrClient: OkHttpClient? = null,
@@ -64,6 +65,7 @@ data class ContainerOverrides(
 
 /** Application owns dependency lifetimes; ViewModels receive concrete dependencies explicitly. */
 class AppContainer(context: Context, overrides: ContainerOverrides = ContainerOverrides()) {
+    val automaticUpdates = overrides.automaticUpdates
     private val appContextInternal = context.applicationContext
 
     /** application context：PanXApp 的 stopBackground 回调等少数接线点需要（不存 UI 状态）。 */
@@ -115,6 +117,8 @@ class AppContainer(context: Context, overrides: ContainerOverrides = ContainerOv
     private val networkRouting = io.github.bileizhen.pan123x.core.network.NetworkRouting({ proxySettings.state.value }, { proxySettings.loaded }, systemProxy = io.github.bileizhen.pan123x.core.network.AndroidSystemProxy(appContext)::select)
     val imageHttpClient = overrides.transferClient ?: PanHttpClientFactory.imageClient(networkRouting)
     val appUpdates = io.github.bileizhen.pan123x.data.settings.UpdateRepository(imageHttpClient, BuildConfig.VERSION_NAME)
+    val updateDownloader = io.github.bileizhen.pan123x.data.settings.UpdateDownloader(imageHttpClient, File(appContext.cacheDir, "updates"))
+    val updateInstaller = io.github.bileizhen.pan123x.data.settings.AndroidUpdateInstaller(appContext)
     val credentialStore = SecureCredentialStore(credentialPreferences, credentialCrypto)
     val deviceIdentityStore = DeviceIdentityStore(devicePreferences)
     val accountManager = AccountManager()

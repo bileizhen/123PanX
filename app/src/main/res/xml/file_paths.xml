@@ -3,6 +3,7 @@
      DownloadStorage 的应用内分支写入 filesDir/downloads，此处的 path 必须与其保持一致。 -->
 <paths>
     <cache-path name="bugreports" path="bugreports/" />
+    <cache-path name="updates" path="updates/" />
     <files-path
         name="downloads"
         path="downloads/" />

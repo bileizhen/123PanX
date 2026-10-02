@@ -4,6 +4,7 @@
          API 26-32 use PlainFloatingBar, matching LeiFetch's isolated fallback. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- M5 后台传输：
          POST_NOTIFICATIONS 为传输进度/完成通知（API 33+ 运行时权限，未授予时静默降级）；
          FOREGROUND_SERVICE(_DATA_SYNC) 仅 API 26-33 的 dataSync 前台服务需要，API 34+ 走
