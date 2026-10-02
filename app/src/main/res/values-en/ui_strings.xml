@@ -383,4 +383,5 @@
     <string name="ui_update_install_failure">Could not request installation. Try again.</string>
     <string name="ui_update_new">A new version is available.</string>
     <string name="ui_update_size">Package</string>
+    <string name="ui_auth_account_storage">Could not save account information. Try again later.</string>
 </resources>

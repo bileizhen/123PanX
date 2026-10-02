@@ -87,8 +87,10 @@ class AuthRepositoryTest {
 
     private class InMemoryMetadataStore : AccountMetadataStore {
         val accounts = linkedMapOf<String, AccountEntity>()
+        var beforeUpsert: (suspend () -> Unit)? = null
 
         override suspend fun upsert(account: AccountEntity) {
+            beforeUpsert?.invoke()
             accounts[account.accountId] = account
         }
 
@@ -304,11 +306,59 @@ class AuthRepositoryTest {
 
         assertEquals(LoginOutcome.Success, outcome)
         assertEquals("Bearer token-1", credentials.active()?.authorization)
-        assertTrue(metadata.accounts.isEmpty())
+        val accountId = SecureCredentialStore.accountIdFor("user@example.com")
+        assertEquals(AccountEntity(accountId, "user@example.com"), metadata.get(accountId))
         val state = manager.state.value
         assertTrue(state is SessionState.Ready)
         assertEquals("user@example.com", (state as SessionState.Ready).displayName)
         assertEquals("", state.uid)
+    }
+
+    @Test fun accountRowIsPresentBeforePasswordUserInfoRequest() = withRepository {
+        repository.restoreSession()
+        api.loginResult = ApiResult.Success("Bearer candidate")
+        api.beforeUserInfo = {
+            val ready = manager.state.value as SessionState.Ready
+            assertTrue(metadata.get(ready.accountId) != null)
+            assertEquals(ready.accountId, credentials.active()?.accountId)
+        }
+        assertEquals(LoginOutcome.Success, repository.login("new@fixture.invalid", "fixture-password"))
+    }
+
+    @Test fun failedAccountWriteKeepsPreviousCredentialsAndSession() = withRepository {
+        repository.restoreSession()
+        api.loginResult = ApiResult.Success("Bearer old")
+        repository.login("old@fixture.invalid", "old-password")
+        val priorSession = manager.state.value
+        val priorCredential = credentials.active()
+        api.loginResult = ApiResult.Success("Bearer candidate")
+        metadata.beforeUpsert = { throw java.io.IOException("fixture disk failure") }
+        assertEquals(LoginOutcome.Failure("无法保存账户信息，请稍后重试"), repository.login("new@fixture.invalid", "new-password"))
+        assertEquals(priorSession, manager.state.value)
+        assertEquals(priorCredential, credentials.active())
+        assertEquals(1, api.userInfoCalls)
+    }
+
+    @Test fun repeatedPasswordLoginPreservesExistingMetadataWhenProfileUnavailable() = withRepository {
+        repository.restoreSession()
+        val id = SecureCredentialStore.accountIdFor("cached@fixture.invalid")
+        val cached = AccountEntity(id, "Saved name", uid = "42", usedBytes = 123, totalBytes = 1000, hasCloudInfo = true)
+        metadata.upsert(cached)
+        api.loginResult = ApiResult.Success("Bearer candidate")
+        assertEquals(LoginOutcome.Success, repository.login("cached@fixture.invalid", "fixture-password"))
+        assertEquals(cached, metadata.get(id))
+    }
+
+    @Test fun accountPreparationCancellationDoesNotSaveOrPublishLogin() = withRepository {
+        repository.restoreSession()
+        api.loginResult = ApiResult.Success("Bearer candidate")
+        metadata.beforeUpsert = { throw kotlinx.coroutines.CancellationException("fixture cancelled") }
+        var cancelled = false
+        try { repository.login("new@fixture.invalid", "fixture-password") }
+        catch (_: kotlinx.coroutines.CancellationException) { cancelled = true }
+        assertTrue(cancelled)
+        assertEquals(SessionState.LoggedOut, manager.state.value)
+        assertNull(credentials.active())
     }
 
     @Test

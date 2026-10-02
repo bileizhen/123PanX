@@ -4,6 +4,7 @@ import io.github.bileizhen.pan123x.R
 
 /** UI-only catalog; user names and file contents are never translated. */
 internal val UiTranslationIds: Map<String, Int> = mapOf(
+    "无法保存账户信息，请稍后重试" to R.string.ui_auth_account_storage,
     "发现新版本" to R.string.ui_update_title,
     "下载源" to R.string.ui_update_source,
     "GitHub 原站" to R.string.ui_update_github,

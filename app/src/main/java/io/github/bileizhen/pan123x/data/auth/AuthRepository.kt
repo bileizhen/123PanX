@@ -20,6 +20,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -94,7 +95,15 @@ class AuthRepository(
         }
 
         val accountId = SecureCredentialStore.accountIdFor(trimmed)
-        // 先落凭据、先置会话，再补全用户信息：
+        // Ready 会立即启动文件加载；accounts 外键必须先存在，不能等用户信息响应再创建。
+        try {
+            ensureAccountRow(accountId, trimmed)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            logger.e(LogSource.DATABASE, "登录账户记录准备失败：${failure.javaClass.simpleName}")
+            return LoginOutcome.Failure(ACCOUNT_STORAGE_MESSAGE)
+        }
+        // 账户记录就绪后落凭据、置会话，再补全用户信息：
         // - getUserInfo 的 authorization 头由 AccountManager 提供，token 必须先写入；
         // - 进程在补全元数据途中被杀时，重启后仍可凭磁盘凭据恢复会话。
         credentials.save(
@@ -147,21 +156,19 @@ class AuthRepository(
             return
         }
         manager.updateProfile(credential.identity)
-        // 元数据是展示增强：读取失败不阻断会话恢复，昵称回退账号名。
-        val account = runCatching { metadata.get(credential.accountId) }
-            .onFailure { logger.w(LogSource.DATABASE, "账户元数据读取失败，恢复会话时暂用账号名") }
-            .getOrNull()
-        if (account == null) {
-            // 云盘缓存实体的外键指向 accounts：设备测试清库等场景可能缺失该行，
-            // 恢复会话时补齐占位行，避免后续文件写入触发 FOREIGN KEY 崩溃。
-            runCatching {
-                metadata.upsert(AccountEntity(accountId = credential.accountId, displayName = credential.passport))
-            }.onFailure { logger.e(LogSource.DATABASE, "账户占位元数据写入失败：${it.javaClass.simpleName}") }
+        val account = try {
+            ensureAccountRow(credential.accountId, credential.passport)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            logger.e(LogSource.DATABASE, "恢复账户记录准备失败：${failure.javaClass.simpleName}")
+            // 保留磁盘凭据供重试，但禁止发布缺少父行的 Ready。
+            manager.onLogout()
+            return
         }
         manager.onLoginSuccess(
             accountId = credential.accountId,
-            displayName = account?.displayName?.ifBlank { null } ?: credential.passport,
-            uid = account?.uid.orEmpty(),
+            displayName = account.displayName.ifBlank { credential.passport },
+            uid = account.uid,
             authorization = credential.authorization,
         )
         logger.i(LogSource.AUTH, "已恢复登录会话")
@@ -264,8 +271,8 @@ class AuthRepository(
      * 顺序约束与 [login] 一致：先 [AccountManager.onLoginSuccess] 写入 token 再拉用户信息，
      * 因为 getUserInfo 的 authorization 头由 [AccountManager] 提供。切换前先清内存会话
      * （token 与 Ready 状态），但不删任何账户的凭据，由 activate 重定向活跃指针。
-     * 用户信息获取失败按现行容错策略处理：昵称暂用账号名、行缺失时补占位行（M4 的
-     * 外键修复语义），不阻塞切换成功。
+     * accounts 行必须在发布 Ready 前准备完成。用户信息失败可保留占位行继续使用；
+     * 本地账户记录无法准备时返回失败，不启动文件缓存写入。
      */
     suspend fun switchTo(accountId: String): SwitchOutcome {
         // 等启动恢复结束再切换，避免恢复流程晚于切换完成时覆盖会话状态（与 login 相同）。
@@ -282,6 +289,13 @@ class AuthRepository(
             return SwitchOutcome.Failed(NO_SAVED_CREDENTIAL_MESSAGE)
         }
         manager.updateProfile(credential.identity)
+        try {
+            ensureAccountRow(accountId, credential.passport)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            logger.e(LogSource.DATABASE, "切换账户记录准备失败：${failure.javaClass.simpleName}")
+            return SwitchOutcome.Failed(ACCOUNT_STORAGE_MESSAGE)
+        }
         manager.onLoginSuccess(
             accountId = accountId,
             displayName = credential.passport,
@@ -295,17 +309,8 @@ class AuthRepository(
         if (info is ApiResult.Success) {
             persistUserInfo(accountId, credential.passport, info.data, revision)
         } else {
-            // 元数据只是展示增强：获取失败不阻塞切换；但 accounts 行缺失会让后续文件写入
-            // 触发 FOREIGN KEY 崩溃，按 restoreSession 的占位行语义补齐。
+            // 父账户行已经存在，用户信息失败不会阻塞切换和文件缓存。
             logger.w(LogSource.AUTH, "切换账户成功，但用户信息获取失败，暂用账号名")
-            val existing = runCatching { metadata.get(accountId) }
-                .onFailure { logger.w(LogSource.DATABASE, "账户元数据读取失败，切换会话时暂用账号名") }
-                .getOrNull()
-            if (existing == null) {
-                runCatching {
-                    metadata.upsert(AccountEntity(accountId = accountId, displayName = credential.passport))
-                }.onFailure { logger.e(LogSource.DATABASE, "账户占位元数据写入失败：${it.javaClass.simpleName}") }
-            }
         }
         val displayName = (manager.state.value as? SessionState.Ready)?.displayName
             ?.ifBlank { null } ?: credential.passport
@@ -346,12 +351,12 @@ class AuthRepository(
         return true
     }
 
-    /**
-     * 用户信息落库并同步会话元数据。
-     *
-     * 容量口径：总容量 = 永久空间（spaceTotal / SpacePermanent）+ 临期空间 spaceTemp，
-     * 详情保留永久 / 临期空间各自数值；昵称为空回退账号名，头像为空存 null。
-     */
+    private suspend fun ensureAccountRow(accountId: String, passport: String): AccountEntity {
+        // Keep existing account details and child caches when logging in again.
+        return metadata.get(accountId) ?: AccountEntity(accountId, passport).also { metadata.upsert(it) }
+    }
+
+    /** 用户信息落库并同步会话；总容量包含永久与临期空间，昵称为空回退账号名。 */
     private suspend fun persistUserInfo(accountId: String, passport: String, info: UserInfoDto, revision: Long = metadataRevision.get()) {
         if ((manager.state.value as? SessionState.Ready)?.accountId != accountId) return
         val generation = manager.generation
@@ -521,6 +526,7 @@ sealed interface QrVerifyOutcome {
 
 // 文件级私有常量（不入 companion，保持对既有区块零改动）。
 private const val QR_PASSPORT_PREFIX = "qr:"
+private const val ACCOUNT_STORAGE_MESSAGE = "无法保存账户信息，请稍后重试"
 private const val QR_NO_CREDENTIAL_MESSAGE = "登录失败：未获取到凭证"
 private const val QR_UNAVAILABLE_MESSAGE = "扫码登录暂不可用，请使用账号密码登录"
 
