@@ -78,7 +78,7 @@ class AuthRepositoryTest {
             return loginResult
         }
 
-        override suspend fun getUserInfo(): ApiResult<UserInfoDto> {
+        override suspend fun getUserInfo(authorization: String?): ApiResult<UserInfoDto> {
             userInfoCalls++
             beforeUserInfo?.invoke()
             return userInfoQueue.removeFirstOrNull() ?: ApiResult.NetworkError("not configured")

@@ -65,7 +65,7 @@ class AccountSwitchTest {
             return loginResult
         }
 
-        override suspend fun getUserInfo(): ApiResult<UserInfoDto> {
+        override suspend fun getUserInfo(authorization: String?): ApiResult<UserInfoDto> {
             userInfoCalls.addLast(userInfoCalls.size + 1)
             return userInfoQueue.removeFirstOrNull() ?: ApiResult.NetworkError("not configured")
         }

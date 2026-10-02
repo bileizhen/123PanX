@@ -355,7 +355,15 @@ class AuthRepository(
     private suspend fun persistUserInfo(accountId: String, passport: String, info: UserInfoDto, revision: Long = metadataRevision.get()) {
         if ((manager.state.value as? SessionState.Ready)?.accountId != accountId) return
         val generation = manager.generation
-        val entity = AccountEntity(
+        val entity = userInfoEntity(accountId, passport, info)
+        metadata.upsert(entity)
+        if (isCurrent(accountId, generation)) {
+            manager.onMetadata(entity.displayName, entity.uid, accountId)
+            lastSync = SyncStamp(generation, revision, clock(), successful = true)
+        }
+    }
+
+    private fun userInfoEntity(accountId: String, passport: String, info: UserInfoDto) = AccountEntity(
             accountId = accountId,
             displayName = info.nickname.ifBlank { passport },
             uid = info.uid.toString(),
@@ -372,12 +380,6 @@ class AuthRepository(
             standardUsedBytes = info.standardSpaceUsed,
             fileCount = info.fileCount, directTrafficBytes = info.directTraffic,
         )
-        metadata.upsert(entity)
-        if (isCurrent(accountId, generation)) {
-            manager.onMetadata(entity.displayName, entity.uid, accountId)
-            lastSync = SyncStamp(generation, revision, clock(), successful = true)
-        }
-    }
 
     /** 健康路径下的落库：账户上下文优先取磁盘凭据，缺失时回退会话状态。 */
     private suspend fun persistUserInfoFromSession(ready: SessionState.Ready, generation: Long, revision: Long, info: UserInfoDto) {
@@ -462,9 +464,8 @@ class AuthRepository(
      * - password 存空串：扫码登录没有可重登密码，会话过期时 [relogin] 必然失败并登出，
      *   用户重新扫码即可；不伪造可重登凭据（数据安全优先）。
      *
-     * 验证先于落库（与参考源一致）：临时把 token 挂上 AccountManager 以携带 authorization 头
-     * （AuthInterceptor 从 AccountManager 取头），getUserInfo 成功才写磁盘凭据；失败恢复验证
-     * 前的会话快照——多账户"添加账户"入口打开登录页时可能已有活跃会话，不得误登出。
+     * 验证只在该请求携带候选 token，不切换当前会话。账户元数据与凭据保存完成后才发布
+     * Ready，保证文件缓存观察者启动时 accounts 外键已存在；验证失败保留原账户。
      */
     suspend fun qrVerify(token: String): QrVerifyOutcome {
         val trimmed = token.trim()
@@ -473,18 +474,11 @@ class AuthRepository(
         manager.awaitRestored()
         val identity = identityStore.loadOrCreate()
         manager.updateProfile(identity)
-        val previousState = manager.state.value
-        val previousAuthorization = manager.current()
-        // 临时会话仅用于给 getUserInfo 供头；不写凭据，进程此刻被杀也只是回到未登录。
-        manager.onLoginSuccess(
-            accountId = QR_PENDING_ACCOUNT_PREFIX + SecureCredentialStore.accountIdFor(trimmed),
-            displayName = "",
-            uid = "",
-            authorization = "Bearer $trimmed",
-        )
-        val info = api.getUserInfo()
+        val generation = manager.generation
+        val authorization = "Bearer $trimmed"
+        val info = api.getUserInfo(authorization)
+        if (manager.generation != generation) return QrVerifyOutcome.Failed("账户已切换，请重新扫码")
         if (info !is ApiResult.Success) {
-            restoreSessionSnapshot(previousState, previousAuthorization)
             val userMessage = AuthMessages.loginFailure(info)
             logger.w(LogSource.AUTH, "扫码登录验证失败：$userMessage")
             return QrVerifyOutcome.Failed(userMessage)
@@ -492,9 +486,10 @@ class AuthRepository(
         val uid = info.data.uid
         val passport = QR_PASSPORT_PREFIX + uid
         val accountId = SecureCredentialStore.accountIdFor(passport)
-        val authorization = "Bearer $trimmed"
         // 昵称为空回退 uid 字符串（qr_login_tasks.py:128：nickname or str(uid)）。
         val displayName = info.data.nickname.ifBlank { uid.toString() }
+        metadata.upsert(userInfoEntity(accountId, passport, info.data))
+        if (manager.generation != generation) return QrVerifyOutcome.Failed("账户已切换，请重新扫码")
         credentials.save(
             PlainCredential(
                 accountId = accountId,
@@ -505,19 +500,11 @@ class AuthRepository(
             ),
         )
         manager.onLoginSuccess(accountId, displayName = displayName, uid = uid.toString(), authorization)
-        persistUserInfo(accountId, passport, info.data)
+        lastSync = SyncStamp(manager.generation, metadataRevision.get(), clock(), successful = true)
         logger.i(LogSource.AUTH, "扫码登录成功")
         return QrVerifyOutcome.Accepted(displayName)
     }
 
-    /** 恢复验证前的会话快照：先前 Ready 则原样复位；authorization 快照缺失时置空串，不误登出活跃会话。 */
-    private fun restoreSessionSnapshot(previous: SessionState, authorization: String?) {
-        if (previous is SessionState.Ready) {
-            manager.onLoginSuccess(previous.accountId, previous.displayName, previous.uid, authorization.orEmpty())
-        } else {
-            manager.onLogout()
-        }
-    }
 }
 
 // ---- M7 QR 登录：结果契约----
@@ -533,7 +520,6 @@ sealed interface QrVerifyOutcome {
 }
 
 // 文件级私有常量（不入 companion，保持对既有区块零改动）。
-private const val QR_PENDING_ACCOUNT_PREFIX = "qr-pending:"
 private const val QR_PASSPORT_PREFIX = "qr:"
 private const val QR_NO_CREDENTIAL_MESSAGE = "登录失败：未获取到凭证"
 private const val QR_UNAVAILABLE_MESSAGE = "扫码登录暂不可用，请使用账号密码登录"

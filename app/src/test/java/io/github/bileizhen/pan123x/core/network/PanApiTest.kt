@@ -54,6 +54,16 @@ class PanApiTest {
         MockResponse().setResponseCode(429).setBody("""{"code":429,"message":"请求过于频繁"}""")
 
     @Test
+    fun candidateAuthorizationIsRequestScopedAndDoesNotReplaceActiveCredentials() = runTest {
+        repeat(2) { server.enqueue(MockResponse().setBody("""{"code":0,"data":{"UID":42,"Nickname":"Fixture"}}""")) }
+        val client = api(auth = AuthorizationProvider { "Bearer existing" })
+        assertTrue(client.getUserInfo("Bearer candidate") is ApiResult.Success)
+        assertEquals("Bearer candidate", server.takeRequest().getHeader("authorization"))
+        assertTrue(client.getUserInfo() is ApiResult.Success)
+        assertEquals("Bearer existing", server.takeRequest().getHeader("authorization"))
+    }
+
+    @Test
     fun loginSuccessSendsProtocolHeadersAndReturnsBearerToken() = runTest {
         server.enqueue(loginOk())
 

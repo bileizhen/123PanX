@@ -15,6 +15,8 @@ fun interface AuthorizationProvider {
 class AuthInterceptor(private val provider: AuthorizationProvider) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
+        // Login verification supplies credentials only for this request.
+        if (chain.request().header("authorization") != null) return chain.proceed(chain.request())
         val authorization = provider.current()
             ?: return chain.proceed(chain.request())
         val request = chain.request().newBuilder()

@@ -55,7 +55,7 @@ class CloudInfoScreenTest {
         )
         val fake = object : PanAuthApi, PanDeviceApi {
             override suspend fun login(passport: String, password: String): ApiResult<String> = ApiResult.NetworkError("not used")
-            override suspend fun getUserInfo() = ApiResult.Success(info)
+            override suspend fun getUserInfo(authorization: String?) = ApiResult.Success(info)
             override suspend fun getLoginDevices(): ApiResult<List<LoginDeviceDto>> {
                 devicesCalls.incrementAndGet()
                 return if (deviceFailure) ApiResult.NetworkError("fixture offline") else ApiResult.Success(listOf(

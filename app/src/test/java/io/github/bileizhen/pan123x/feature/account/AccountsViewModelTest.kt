@@ -75,7 +75,7 @@ class AccountsViewModelTest {
 
         override suspend fun login(passport: String, password: String): ApiResult<String> = loginResult
 
-        override suspend fun getUserInfo(): ApiResult<UserInfoDto> {
+        override suspend fun getUserInfo(authorization: String?): ApiResult<UserInfoDto> {
             userInfoCalls.addLast(userInfoCalls.size + 1)
             userInfoGate?.await()
             return userInfoQueue.removeFirstOrNull() ?: ApiResult.NetworkError("not configured")

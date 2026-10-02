@@ -24,6 +24,7 @@ import io.github.bileizhen.pan123x.core.network.UserInfoDto
 import io.github.bileizhen.pan123x.data.auth.AccountMetadataStore
 import io.github.bileizhen.pan123x.data.auth.AuthRepository
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -112,6 +113,7 @@ class LoginViewModelQrTest {
 
         val loginCalls = mutableListOf<Pair<String, String>>()
         var userInfoCalls = 0
+        val userInfoAuthorizations = mutableListOf<String?>()
 
         fun enqueueUserInfo(result: ApiResult<UserInfoDto>) {
             userInfoProviders.addLast { result }
@@ -127,8 +129,9 @@ class LoginViewModelQrTest {
             return loginResult
         }
 
-        override suspend fun getUserInfo(): ApiResult<UserInfoDto> {
+        override suspend fun getUserInfo(authorization: String?): ApiResult<UserInfoDto> {
             userInfoCalls++
+            userInfoAuthorizations.add(authorization)
             return userInfoProviders.removeFirstOrNull()?.invoke() ?: ApiResult.NetworkError("not configured")
         }
     }
@@ -150,8 +153,10 @@ class LoginViewModelQrTest {
 
     private class InMemoryMetadata : AccountMetadataStore {
         val accounts = linkedMapOf<String, AccountEntity>()
+        var beforeUpsert: suspend (AccountEntity) -> Unit = {}
 
         override suspend fun upsert(account: AccountEntity) {
+            beforeUpsert(account)
             accounts[account.accountId] = account
         }
 
@@ -350,6 +355,60 @@ class LoginViewModelQrTest {
 
         assertEquals(QrPhase.EXPIRED, model.uiState.value.qrPhase)
         assertEquals(1, fixture.qrApi.pollCalls.size)
+    }
+
+    @Test
+    fun qrVerificationPublishesReadyOnlyAfterAccountIsStored() = withVirtualClock {
+        val fixture = createFixture().apply { restore() }
+        val gate = CompletableDeferred<ApiResult<UserInfoDto>>()
+        fixture.api.enqueueUserInfoDeferred(gate)
+        fixture.metadata.beforeUpsert = {
+            assertEquals("Account must exist before cache observers can run", SessionState.LoggedOut, fixture.manager.state.value)
+        }
+        val verification = async { fixture.repository.qrVerify("fixture-token") }
+        runCurrent()
+        assertEquals("Verification must not publish a temporary account", SessionState.LoggedOut, fixture.manager.state.value)
+        assertNull(fixture.manager.current())
+        gate.complete(ApiResult.Success(userInfo()))
+        verification.await()
+        val ready = fixture.manager.state.value as SessionState.Ready
+        assertTrue(fixture.metadata.accounts.containsKey(ready.accountId))
+    }
+
+    @Test
+    fun failedQrVerificationKeepsExistingAccountAndAuthorization() = withVirtualClock {
+        val fixture = createFixture().apply { restore() }
+        fixture.manager.onLoginSuccess("existing", "Existing", "7", "Bearer existing")
+        val existing = fixture.manager.state.value
+        val gate = CompletableDeferred<ApiResult<UserInfoDto>>()
+        fixture.api.enqueueUserInfoDeferred(gate)
+        val verification = async { fixture.repository.qrVerify("candidate") }
+        runCurrent()
+        assertEquals(existing, fixture.manager.state.value)
+        assertEquals("Bearer existing", fixture.manager.current())
+        assertEquals(listOf("Bearer candidate"), fixture.api.userInfoAuthorizations)
+        gate.complete(ApiResult.SessionExpired)
+        assertTrue(verification.await() is io.github.bileizhen.pan123x.data.auth.QrVerifyOutcome.Failed)
+        assertEquals(existing, fixture.manager.state.value)
+        assertEquals("Bearer existing", fixture.manager.current())
+        assertTrue(fixture.metadata.accounts.isEmpty())
+        assertNull(fixture.credentials.active())
+    }
+
+    @Test
+    fun qrVerificationDoesNotReplaceAnAccountChangedDuringVerification() = withVirtualClock {
+        val fixture = createFixture().apply { restore() }
+        val gate = CompletableDeferred<ApiResult<UserInfoDto>>()
+        fixture.api.enqueueUserInfoDeferred(gate)
+        val verification = async { fixture.repository.qrVerify("candidate") }
+        runCurrent()
+        fixture.manager.onLoginSuccess("newer", "Newer", "9", "Bearer newer")
+        gate.complete(ApiResult.Success(userInfo()))
+        assertTrue(verification.await() is io.github.bileizhen.pan123x.data.auth.QrVerifyOutcome.Failed)
+        assertEquals("newer", (fixture.manager.state.value as SessionState.Ready).accountId)
+        assertEquals("Bearer newer", fixture.manager.current())
+        assertTrue(fixture.metadata.accounts.isEmpty())
+        assertNull(fixture.credentials.active())
     }
 
     @Test

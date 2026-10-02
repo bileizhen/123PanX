@@ -40,7 +40,8 @@ interface PanAuthApi {
     /** 登录成功返回 authorization 值（"Bearer " + token，含空格）。 */
     suspend fun login(passport: String, password: String): ApiResult<String>
 
-    suspend fun getUserInfo(): ApiResult<UserInfoDto>
+    /** A login candidate can be verified without replacing the active account's credentials. */
+    suspend fun getUserInfo(authorization: String? = null): ApiResult<UserInfoDto>
 }
 
 /** 文件列表 API，供 FileRepository 消费；测试可用 MockWebServer 或替身实现。 */
@@ -226,13 +227,14 @@ class PanApi(
         }
     }
 
-    override suspend fun getUserInfo(): ApiResult<UserInfoDto> {
+    override suspend fun getUserInfo(authorization: String?): ApiResult<UserInfoDto> {
         val spec = CallSpec(
             method = "GET",
             path = USER_INFO_PATH,
             body = null,
             successCodes = setOf(USER_INFO_SUCCESS_CODE),
             retryOnServerError = true,
+            authorization = authorization,
         )
         return execute(spec) { root, httpCode ->
             val info = UserInfoDto.fromJsonElement(root)
@@ -849,6 +851,7 @@ class PanApi(
         val retryOnServerError: Boolean,
         val query: Map<String, String>? = null,
         val readTimeoutSeconds: Int? = null,
+        val authorization: String? = null,
     )
 
     /** 一次 HTTP 往返结果：HTTP 状态码与包络解析结果分开携带。 */
@@ -859,6 +862,7 @@ class PanApi(
 
     private fun buildRequest(base: String, spec: CallSpec): Request {
         val builder = Request.Builder().url(buildUrl(base, spec))
+        spec.authorization?.let { builder.header("authorization", it) }
         return if (spec.body != null) {
             // 参考源固定 application/json，不带 charset 后缀；String RequestBody 会自动补 charset，需走字节 body
             builder.post(spec.body.toByteArray(Charsets.UTF_8).toRequestBody("application/json".toMediaType())).build()
