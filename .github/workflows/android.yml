@@ -23,7 +23,7 @@ jobs:
       - name: Verify
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+          ./gradlew -Ppanx.officialRepositoriesFirst=true :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
       - uses: actions/upload-artifact@v4
         if: always()
         with:
