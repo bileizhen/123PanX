@@ -52,6 +52,7 @@ class ShareClipboardAndLogExportTest {
         var sharedFile: File? = null
         try {
             compose.onNodeWithTag("tab_3").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("account_screen").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("account_screen").performScrollToIndex(5)
             compose.onNodeWithTag("account_export_logs").performClick()
             waitForExportDialog()
@@ -139,6 +140,7 @@ class ShareClipboardAndLogExportTest {
 
     @Test fun exportDialogAndReportUseNarrowFileProviderUriAndRedactedZip() {
         compose.onNodeWithTag("tab_3").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("account_screen").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("account_screen").performScrollToIndex(5)
         compose.onNodeWithTag("account_export_logs").performClick()
         compose.mainClock.advanceTimeBy(700)
