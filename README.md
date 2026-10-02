@@ -167,6 +167,10 @@ Debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。正式发布需�
 
 ## 参与开发
 
+每个阶段拆成原子提交，每次只处理一项可独立审查的改动，并保持项目可构建。相关测试随功能提交，正文说明实际改动和验证结果。
+
+提交标题使用 `feat:`、`fix:`、`refactor:`、`test:`、`docs:` 或 `chore:`，分别用于新增功能、问题修复、重构、测试、文档和工程维护。避免使用“完成整个 123PanX”等笼统标题一次提交全部功能。
+
 - [第三方依赖与许可证](THIRD_PARTY_NOTICES.md)
 
 ## 开源协议
