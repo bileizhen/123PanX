@@ -689,6 +689,12 @@ class PanApi(
         }
     }
 
+    override suspend fun sharedInfo(key: String): ApiResult<SharedInfoDto?> =
+        execute(CallSpec("GET", "/b/api/share/info", null, setOf(0), retryOnServerError = true,
+            query = linkedMapOf("shareKey" to key), readTimeoutSeconds = 30)) { root, _ ->
+            SharedInfoDto.fromJson(root)?.let { ApiResult.Success(it) } ?: ApiResult.ParseError("分享信息暂不可用")
+        }
+
     override suspend fun sharedFiles(key: String, password: String, parentId: Long, page: Int, next: String): ApiResult<FileListDto> {
         val spec = CallSpec("GET", "/b/api/share/get", null, setOf(0), retryOnServerError = true,
             query = linkedMapOf("limit" to "100", "next" to next, "orderBy" to "file_id", "orderDirection" to "asc",

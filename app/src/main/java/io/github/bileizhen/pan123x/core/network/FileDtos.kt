@@ -1,13 +1,11 @@
 package io.github.bileizhen.pan123x.core.network
 
-import java.time.Instant
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 
 /**
@@ -35,6 +33,7 @@ data class FileItemDto(
     val hidden: Boolean,
     val starred: Boolean,
     val pinyin: String,
+    val status: Int? = null,
 ) {
     companion object {
         private const val FILE_TYPE_FOLDER = 1
@@ -53,6 +52,7 @@ data class FileItemDto(
             hidden = data.boolOf("Hidden", "hidden"),
             starred = data.boolOf("StarredStatus", "starredStatus"),
             pinyin = data.stringOf("PinYin", "pinYin"),
+            status = (data["Status"] as? JsonPrimitive)?.longOrNull?.toInt(),
         )
     }
 }
@@ -145,21 +145,11 @@ private fun JsonObject.firstPrimitiveOf(vararg keys: String): JsonPrimitive? {
 
 /**
  * 时间戳容错（对应参考源 `_parse_timestamp`），统一折算 epochMillis：
- * - unix 秒（int / float / 数字字符串）-> * 1000；
- * - ISO8601 字符串（含 T 或 -）-> Instant 解析，失败为 0；
+ * - unix 秒 / 毫秒（int / float / 数字字符串）；
+ * - ISO8601 或北京时间 yyyy/M/d H:mm:ss，失败为 0；
  * - 空串 / null / 0 / 无法识别 -> 0。
  */
 private fun JsonObject.timestampOf(vararg keys: String): Long {
     val value = firstPrimitiveOf(*keys) ?: return 0L
-    value.longOrNull?.let { return it * 1000 }
-    if (!value.isString) {
-        // JSON 数字字面量的小数秒（如 1700001234.5）
-        value.doubleOrNull?.let { return (it * 1000.0).toLong() }
-    }
-    val text = value.content.trim()
-    if (text.isEmpty()) return 0L
-    if ('T' in text || '-' in text) {
-        return runCatching { Instant.parse(text).toEpochMilli() }.getOrDefault(0L)
-    }
-    return text.toDoubleOrNull()?.let { (it * 1000.0).toLong() } ?: 0L
+    return parsePanTimestamp(value.content)
 }

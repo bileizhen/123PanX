@@ -9,6 +9,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 interface SharedFilesActions {
+    suspend fun info(key: String): ApiResult<SharedInfoDto?> = ApiResult.Success(null)
     suspend fun list(key: String, password: String, parentId: Long, page: Int, next: String): ApiResult<FileListDto>
     suspend fun save(key: String, password: String, files: List<FileItemDto>, targetId: Long): String?
     suspend fun download(key: String, password: String, files: List<FileItemDto>, tree: String?): SharedQueueResult
@@ -24,6 +25,7 @@ class SharedFilesRepository(
     private val onSaved: suspend (String, Long) -> Unit,
     private val pollDelay: suspend () -> Unit = { delay(1_000) },
 ) : SharedFilesActions {
+    override suspend fun info(key: String) = api.sharedInfo(key)
     override suspend fun list(key: String, password: String, parentId: Long, page: Int, next: String) =
         api.sharedFiles(key, password, parentId, page, next)
 
