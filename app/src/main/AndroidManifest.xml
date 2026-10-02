@@ -1,21 +1,56 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-
+    <!-- Only HighApiFloatingNavigation loads miuix-blur on hardware-accelerated API 33+.
+         API 26-32 use PlainFloatingBar, matching LeiFetch's isolated fallback. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-
+    <!-- M5 后台传输：
+         POST_NOTIFICATIONS 为传输进度/完成通知（API 33+ 运行时权限，未授予时静默降级）；
+         FOREGROUND_SERVICE(_DATA_SYNC) 仅 API 26-33 的 dataSync 前台服务需要，API 34+ 走
+         User-Initiated Data Transfer Job（无需这两个权限，JobScheduler 自带系统通知）。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-
+    <!-- API 34+ User-Initiated Data Transfer Job 的硬性要求（JobInfo.Builder.setUserInitiated）。 -->
     <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
     <uses-sdk tools:overrideLibrary="top.yukonga.miuix.kmp.blur" />
-    <application android:allowBackup="false" android:icon="@mipmap/ic_launcher" android:label="@string/app_name" android:supportsRtl="true" android:theme="@style/Theme.Pan123X" android:usesCleartextTraffic="false">
-        <service android:name="io.github.bileizhen.pan123x.core.transfer.background.TransferForegroundService" android:exported="false" android:foregroundServiceType="dataSync" />
-        <service android:name="io.github.bileizhen.pan123x.core.transfer.background.TransferJobService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
-
-        <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.files" android:exported="false" android:grantUriPermissions="true">
-            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+    <application
+        android:name=".PanXApplication"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Pan123X"
+        android:usesCleartextTraffic="false">
+        <activity android:name=".MainActivity" android:exported="true" android:enableOnBackInvokedCallback="true" android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- M5 后台传输外壳（TransferBackgroundLauncher 按 SDK 分派）：
+             两者都不执行传输——真正的传输在应用级协程 scope 上并持久化到 Room，服务/Job 只负责
+             满足系统声明要求与提升进程优先级；进程被杀后靠 recoverOnStart 恢复，因此
+             服务 START_NOT_STICKY、Job 不重排。 -->
+        <service
+            android:name="io.github.bileizhen.pan123x.core.transfer.background.TransferForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <service
+            android:name="io.github.bileizhen.pan123x.core.transfer.background.TransferJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- 下载保存位置为"应用内目录"时（未选择 SAF 目录树的默认/回退路径），下载完成的文件
+             经 FileProvider 暴露给系统"打开方式"与分享，绝不使用 file:// 直传。
+             authority 必须与 DownloadStorage 里的 "${context.packageName}.files" 一致。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
         </provider>
     </application>
 </manifest>
