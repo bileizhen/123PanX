@@ -8,6 +8,7 @@ local.properties
 *.keystore
 keystore.properties
 signing.properties
+.signing/
 .reference/
 .verification/
 .workbuddy/

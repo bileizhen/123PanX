@@ -5,6 +5,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
 }
+val releaseSigningValues = listOf("PANX_SIGNING_STORE_FILE", "PANX_SIGNING_STORE_PASSWORD", "PANX_SIGNING_KEY_ALIAS", "PANX_SIGNING_KEY_PASSWORD")
+    .associateWith { providers.environmentVariable(it).orNull }
+val releaseSigningReady = releaseSigningValues.values.all { !it.isNullOrBlank() }
 android {
     namespace = "io.github.bileizhen.pan123x"
     compileSdk = 37
@@ -12,12 +15,23 @@ android {
         applicationId = "io.github.bileizhen.pan123x"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.4.0-m4"
+        versionCode = 6
+        versionName = "0.4.0"
         testInstrumentationRunner = "io.github.bileizhen.pan123x.PanXTestRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
+    signingConfigs {
+        if (releaseSigningReady) create("officialRelease") {
+            storeFile = file(releaseSigningValues.getValue("PANX_SIGNING_STORE_FILE")!!)
+            storePassword = releaseSigningValues.getValue("PANX_SIGNING_STORE_PASSWORD")
+            keyAlias = releaseSigningValues.getValue("PANX_SIGNING_KEY_ALIAS")
+            keyPassword = releaseSigningValues.getValue("PANX_SIGNING_KEY_PASSWORD")
+        }
+    }
     buildTypes {
+        getByName("release") {
+            if (releaseSigningReady) signingConfig = signingConfigs.getByName("officialRelease")
+        }
         getByName("debug") {
             // UI tests seed and clear Room: keep them separate from the user's installed client.
             applicationIdSuffix = ".debug"
@@ -35,6 +49,9 @@ android {
     lint { abortOnError = true }
 }
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
+tasks.matching { it.name == "packageRelease" }.configureEach {
+    doFirst { check(releaseSigningReady) { "Release signing requires all four PANX_SIGNING_* environment variables" } }
+}
 tasks.withType<Test>().configureEach {
     // Keep the Gradle worker protocol and Windows paths consistent with the build JVM.
     jvmArgs("-Dfile.encoding=UTF-8")
