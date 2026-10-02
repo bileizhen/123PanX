@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="ui_connections"><item quantity="other">%1$d 个连接</item></plurals>
+    <plurals name="ui_parts"><item quantity="other">%1$d 个分片</item></plurals>
+    <plurals name="ui_tasks"><item quantity="other">%1$d 个任务</item></plurals>
+    <plurals name="ui_items"><item quantity="other">%1$d 个项目</item></plurals>
+    <string name="ui_transfer_summary">%1$s 项 · %2$s 进行中</string>
+</resources>

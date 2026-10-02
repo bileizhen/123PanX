@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ui_proxy_modes_0">Proxy</string>
+    <string name="ui_proxy_modes_1">No proxy</string>
+    <string name="ui_proxy_modes_2">System proxy</string>
+    <string name="ui_proxy_modes_3">Manual configuration</string>
+    <string name="ui_proxy_modes_4">Automatic (recommended)</string>
+    <string name="ui_proxy_modes_5">Connect directly and ignore system proxy settings</string>
+    <string name="ui_proxy_modes_6">Use the system proxy configured by Wi-Fi or a VPN app</string>
+    <string name="ui_proxy_modes_7">Set a proxy server, optional credentials and bypass rules</string>
+    <string name="ui_proxy_modes_8">Prefer the system proxy, then detect common local proxy ports; connect directly if none are found</string>
+    <string name="ui_proxy_modes_9">API requests, downloads, uploads and previews share this configuration. Bypassed hosts always connect directly.</string>
+    <string name="ui_proxy_modes_10">Selected</string>
+    <string name="ui_proxy_modes_11">Proxy type</string>
+    <string name="ui_proxy_modes_12">Server address</string>
+    <string name="ui_proxy_modes_13">Port</string>
+    <string name="ui_proxy_modes_14">Bypass rules</string>
+    <string name="ui_proxy_modes_15">Bypass rules (optional)</string>
+    <string name="ui_proxy_modes_16">Separate entries with commas or spaces. Domains include subdomains; * bypasses all hosts; &lt;local&gt; matches localhost and private addresses.</string>
+    <string name="ui_proxy_modes_17">Automatic mode detects common local ports using HTTP CONNECT or SOCKS5 handshakes and caches results for five minutes. A selected proxy failure does not fall back to a direct connection.</string>
+    <string name="ui_proxy_modes_18">Save to apply to new requests. Existing requests keep their current route.</string>
+    <string name="ui_proxy_modes_19">Check the latest release</string>
+    <string name="ui_proxy_modes_20">Select a valid proxy mode</string>
+    <string name="ui_proxy_modes_21">Too many bypass rules</string>
+    <string name="ui_proxy_modes_22">Bypass rules support domains, IP addresses, * and &lt;local&gt;</string>
+</resources>

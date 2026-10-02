@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ui_proxy_modes_0">代理</string>
+    <string name="ui_proxy_modes_1">不使用代理</string>
+    <string name="ui_proxy_modes_2">系统代理</string>
+    <string name="ui_proxy_modes_3">手动配置</string>
+    <string name="ui_proxy_modes_4">自动（推荐）</string>
+    <string name="ui_proxy_modes_5">所有网络请求直连，忽略系统代理</string>
+    <string name="ui_proxy_modes_6">跟随 Wi-Fi 或 VPN 应用写入的系统代理</string>
+    <string name="ui_proxy_modes_7">指定代理服务器，可设账号密码与直连名单</string>
+    <string name="ui_proxy_modes_8">优先系统代理，其次探测本机常见代理端口，都不可用时直连</string>
+    <string name="ui_proxy_modes_9">API、下载、上传和预览共用此配置。直连名单中的地址始终直连。</string>
+    <string name="ui_proxy_modes_10">已选择</string>
+    <string name="ui_proxy_modes_11">代理类型</string>
+    <string name="ui_proxy_modes_12">服务器地址</string>
+    <string name="ui_proxy_modes_13">端口</string>
+    <string name="ui_proxy_modes_14">直连名单</string>
+    <string name="ui_proxy_modes_15">直连名单（可留空）</string>
+    <string name="ui_proxy_modes_16">用逗号或空格分隔；域名匹配自身及子域，* 表示全部直连，&lt;local&gt; 表示 localhost 和内网地址。</string>
+    <string name="ui_proxy_modes_17">自动模式探测本机常见端口，执行 HTTP CONNECT 或 SOCKS5 握手，结果缓存 5 分钟。已选择的代理连接失败时不会改走直连。</string>
+    <string name="ui_proxy_modes_18">保存后对新请求生效，已有请求继续使用原线路。</string>
+    <string name="ui_proxy_modes_19">查看最新正式版本</string>
+    <string name="ui_proxy_modes_20">请选择有效的代理模式</string>
+    <string name="ui_proxy_modes_21">直连名单过长</string>
+    <string name="ui_proxy_modes_22">直连名单仅支持域名、IP、* 和 &lt;local&gt;</string>
+</resources>

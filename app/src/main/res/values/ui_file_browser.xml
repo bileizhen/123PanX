@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ui_file_0">添加</string>
+    <string name="ui_file_1">全不选</string>
+    <string name="ui_file_2">更多文件操作</string>
+    <string name="ui_file_3">搜索结果</string>
+    <string name="ui_file_4">方向</string>
+    <plurals name="ui_selected_files"><item quantity="other">已选 %1$d 项</item></plurals>
+</resources>

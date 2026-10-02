@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider 暴露路径：只开放应用内下载目录，不暴露 filesDir 其他内容。
+     DownloadStorage 的应用内分支写入 filesDir/downloads，此处的 path 必须与其保持一致。 -->
+<paths>
+    <cache-path name="bugreports" path="bugreports/" />
+    <files-path
+        name="downloads"
+        path="downloads/" />
+</paths>

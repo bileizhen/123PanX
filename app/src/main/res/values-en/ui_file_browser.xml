@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ui_file_0">Add</string>
+    <string name="ui_file_1">Deselect all</string>
+    <string name="ui_file_2">More file actions</string>
+    <string name="ui_file_3">Search results</string>
+    <string name="ui_file_4">Direction</string>
+    <plurals name="ui_selected_files"><item quantity="one">Selected %1$d item</item><item quantity="other">Selected %1$d items</item></plurals>
+</resources>

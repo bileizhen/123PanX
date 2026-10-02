@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="ui_connections"><item quantity="one">%1$d connection</item><item quantity="other">%1$d connections</item></plurals>
+    <plurals name="ui_parts"><item quantity="one">%1$d part</item><item quantity="other">%1$d parts</item></plurals>
+    <plurals name="ui_tasks"><item quantity="one">%1$d task</item><item quantity="other">%1$d tasks</item></plurals>
+    <plurals name="ui_items"><item quantity="one">%1$d item</item><item quantity="other">%1$d items</item></plurals>
+    <string name="ui_transfer_summary">%1$s items · %2$s active</string>
+</resources>
