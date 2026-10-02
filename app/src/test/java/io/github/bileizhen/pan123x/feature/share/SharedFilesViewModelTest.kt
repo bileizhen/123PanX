@@ -49,6 +49,8 @@ class SharedFilesViewModelTest {
         /** 非 null 时 save 挂起在门闩上，模拟转存在途（busy 窗口）。 */
         var saveGate: CompletableDeferred<Unit>? = null
         var downloadResult = SharedQueueResult(0)
+        var infoResult: ApiResult<io.github.bileizhen.pan123x.core.network.SharedInfoDto?> = ApiResult.Success(null)
+        override suspend fun info(key: String) = infoResult
 
         fun enqueueList(vararg results: ApiResult<FileListDto>) { results.forEach { listQueue.addLast(it) } }
 
@@ -220,10 +222,57 @@ class SharedFilesViewModelTest {
         vm.enter(file(9, "x", folder = true))
         vm.toggle(1)
         vm.save(6)
+        vm.refresh()
+        vm.search("hidden")
+        vm.more()
         assertEquals(listOf(0L to "全部文件"), vm.state.value.trail)
         assertEquals(setOf(1L), vm.state.value.selected)
         assertEquals(1, actions.saveCalls.size)
+        assertEquals(1, actions.listCalls.size)
+        assertEquals("", vm.state.value.search)
         actions.saveGate?.complete(Unit)
         assertTrue(!vm.state.value.busy)
+    }
+
+    @Test fun searchSelectsOnlyVisibleAvailableFilesAndDoesNotLeakHiddenSelection() {
+        val actions = FakeSharedFilesActions()
+        actions.enqueueList(ApiResult.Success(FileListDto(listOf(file(1, "one.zip"), file(2, "two.zip"), file(3, "one-invalid.zip").copy(status = 0)), 3, "-1", 3, true)))
+        val vm = model(actions = actions)
+        vm.toggle(2)
+        vm.search("ONE")
+        assertTrue(vm.state.value.selected.isEmpty())
+        assertEquals(listOf(3L, 1L), vm.state.value.visibleFiles.map { it.fileId })
+        vm.selectAll()
+        assertEquals(setOf(1L), vm.state.value.selected)
+        vm.toggle(3); vm.toggle(999)
+        assertEquals(setOf(1L), vm.state.value.selected)
+    }
+
+    @Test fun sortKeepsFoldersFirstAndRetainsSelectionAcrossLayoutChange() {
+        val actions = FakeSharedFilesActions()
+        actions.enqueueList(ApiResult.Success(FileListDto(listOf(file(1, "a").copy(size = 20), file(2, "z", true), file(3, "b").copy(size = 200)), 3, "-1", 3, true)))
+        val vm = model(actions = actions)
+        vm.sort(SharedSort.SIZE, false)
+        vm.toggle(1); vm.toggleLayout()
+        assertEquals(listOf(2L, 3L, 1L), vm.state.value.visibleFiles.map { it.fileId })
+        assertTrue(vm.state.value.grid)
+        assertEquals(setOf(1L), vm.state.value.selected)
+    }
+
+    @Test fun metadataFailureDoesNotBlockFilesAndExpiredSharesCannotQueueActions() {
+        val actions = FakeSharedFilesActions()
+        actions.infoResult = ApiResult.NetworkError("offline")
+        actions.enqueueList(ApiResult.Success(FileListDto(listOf(file(1)), 1, "-1", 1, true)))
+        val vm = model(actions = actions)
+        assertEquals(1, vm.state.value.files.size)
+        assertNull(vm.state.value.error)
+        assertTrue(vm.state.value.infoError != null)
+        vm.toggle(1)
+        actions.infoResult = ApiResult.Success(io.github.bileizhen.pan123x.core.network.SharedInfoDto("share", "owner", "", true, 0, 0, true, false))
+        vm.refreshInfo()
+        vm.selectAll(); vm.toggle(1); vm.selectOnly(1); vm.download(); vm.save(0)
+        assertTrue(vm.state.value.selected.isEmpty())
+        assertTrue(actions.downloadCalls.isEmpty())
+        assertTrue(actions.saveCalls.isEmpty())
     }
 }

@@ -315,6 +315,7 @@ fun PanXApp(container: AppContainer) {
                                         AboutScreen(onBack = navigateBack, onLicense = { open("license") }, onNotices = { open("notices") }, onPrivacy = { open("privacy") }, enableBlur = settings.blur)
                                     } else if (page.kind == "directory") filesContent(page.id.toLong())
                                     else if (page.kind == "shared-files") {
+                                        val sharedSession by container.accountManager.state.collectAsStateWithLifecycle()
                                         // id 携带 "url|password"（SharedLink.url 由解析器规范化，不含 '|'）。
                                         val sharedVm: SharedFilesViewModel = viewModel(
                                             key = "shared-files-${page.id}",
@@ -327,6 +328,8 @@ fun PanXApp(container: AppContainer) {
                                         )
                                         SharedFilesScreen(
                                             viewModel = sharedVm,
+                                            active = backStack.lastOrNull() == page,
+                                            loggedIn = sharedSession is io.github.bileizhen.pan123x.core.account.SessionState.Ready,
                                             directoryPickerFactory = directoryPickerFactory,
                                             onBack = { (pageBackActions.current ?: navigateBack).invoke() },
                                             onOpenLogin = { open("login") },
