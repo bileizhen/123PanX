@@ -1,4 +1,5 @@
-// Release validation adapted from bileizhen/LeiFetch AppUpdates.kt, GPL-3.0-only.
+// Stable-release flow adapted from XBlocker AppUpdates/AppRelease (MIT);
+// repository validation, cancellable OkHttp and asset integrity rewritten for 123PanX.
 package io.github.bileizhen.pan123x.data.settings
 
 import java.io.IOException
@@ -14,7 +15,15 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-data class AppRelease(val version: String, val notes: String, val url: String)
+data class AppRelease(val version: String, val notes: String, val url: String,
+    val downloadUrl: String, val size: Long, val sha256: String)
+
+enum class UpdateSource(val label: String, private val prefix: String = "") {
+    GITHUB("GitHub 原站"), MIRROR("gh.dpik.top 镜像", "https://gh.dpik.top/");
+    fun url(release: AppRelease): String = prefix + release.downloadUrl
+}
+
+fun interface UpdateChecker { suspend fun check(): UpdateResult }
 sealed interface UpdateResult {
     data class Available(val release: AppRelease) : UpdateResult
     data object Current : UpdateResult
@@ -31,23 +40,38 @@ object ReleaseParser {
         val root = json.parseToJsonElement(body).jsonObject
         val tag = root.string("tag_name")
         val candidate = parseVersion(tag) ?: return UpdateResult.Failed("更新版本格式无效")
-        // Local milestone/debug builds use their base version for comparison.
-        val current = parseVersion(installed.replace(Regex("-m[0-9]+-debug$"), ""))
+        val localVersion = installed.removeSuffix("-debug").replace(Regex("-m([0-9]+)$"), "-alpha.$1")
+        val current = parseVersion(localVersion)
             ?: return UpdateResult.Failed("无法比较当前应用版本")
         if (root["draft"]?.jsonPrimitive?.booleanOrNull == true || root["prerelease"]?.jsonPrimitive?.booleanOrNull == true || candidate[3] != 3L)
             return UpdateResult.Failed("未找到正式发布版本")
         val page = "https://github.com/$REPOSITORY/releases/tag/$tag"
         if (root.string("html_url") != page) return UpdateResult.Failed("更新来源不匹配")
         val assets = root["assets"] as? JsonArray ?: return UpdateResult.Failed("该版本没有 Android 安装包")
-        val hasApk = assets.any { element ->
-            val asset = element as? JsonObject ?: return@any false
+        val asset = assets.mapNotNull { element ->
+            val asset = element as? JsonObject ?: return@mapNotNull null
             val download = asset.string("browser_download_url").toHttpUrlOrNullSafe()
-            asset.string("name").endsWith(".apk", true) && download?.scheme == "https" && download.host == "github.com" &&
-                download.encodedPath.startsWith("/$REPOSITORY/releases/download/$tag/") && download.username.isBlank() && download.password.isBlank()
-        }
-        if (!hasApk) return UpdateResult.Failed("该版本没有可信的 Android 安装包")
+            val name = asset.string("name")
+            val trusted = name.startsWith("123PanX", true) && name.endsWith(".apk", true) &&
+                !name.contains("debug", true) && !name.contains("unsigned", true) &&
+                download?.scheme == "https" && download.host == "github.com" &&
+                download.encodedPath == "/$REPOSITORY/releases/download/$tag/$name" &&
+                download.username.isBlank() && download.password.isBlank() && download.query == null && download.fragment == null
+            asset.takeIf { trusted }
+        }.firstOrNull { it.string("name") == "123PanX-${tag.removePrefix("v")}.apk" }
+            ?: assets.mapNotNull { it as? JsonObject }.firstOrNull { candidateAsset ->
+                val name = candidateAsset.string("name")
+                name == "123PanX.apk" && candidateAsset.string("browser_download_url") == "https://github.com/$REPOSITORY/releases/download/$tag/$name"
+            }
+            ?: return UpdateResult.Failed("该版本没有可信的 Android 安装包")
+        val size = asset["size"]?.jsonPrimitive?.longOrNull ?: 0L
+        val digest = asset.string("digest").removePrefix("sha256:").lowercase()
+        if (size !in 1..UpdateDownloader.MAX_APK_BYTES || !Regex("[a-f0-9]{64}").matches(digest))
+            return UpdateResult.Failed("安装包缺少有效的大小或 SHA-256 校验信息")
         val comparison = candidate.zip(current).map { (a, b) -> a.compareTo(b) }.firstOrNull { it != 0 } ?: 0
-        return if (comparison > 0) UpdateResult.Available(AppRelease(tag.removePrefix("v"), root.string("body").take(12_000), page)) else UpdateResult.Current
+        return if (comparison > 0 || comparison == 0 && installed.endsWith("-debug")) UpdateResult.Available(
+            AppRelease(tag.removePrefix("v"), root.string("body").take(12_000), page, asset.string("browser_download_url"), size, digest),
+        ) else UpdateResult.Current
     }
 
     private fun String.toHttpUrlOrNullSafe(): HttpUrl? = try { toHttpUrl() } catch (_: IllegalArgumentException) { null }
@@ -60,9 +84,9 @@ object ReleaseParser {
 }
 
 class UpdateRepository(private val client: OkHttpClient, private val installed: String,
-    private val endpoint: HttpUrl = "https://api.github.com/repos/${ReleaseParser.REPOSITORY}/releases/latest".toHttpUrl()) {
+    private val endpoint: HttpUrl = "https://api.github.com/repos/${ReleaseParser.REPOSITORY}/releases/latest".toHttpUrl()) : UpdateChecker {
     @OptIn(InternalCoroutinesApi::class)
-    suspend fun check(): UpdateResult = withContext(Dispatchers.IO) {
+    override suspend fun check(): UpdateResult = withContext(Dispatchers.IO) {
         val call = client.newCall(Request.Builder().url(endpoint).header("Accept", "application/vnd.github+json").header("User-Agent", "123PanX/$installed").build())
         val cancel = currentCoroutineContext().job.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { if (it != null) call.cancel() }
         try {

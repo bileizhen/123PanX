@@ -80,3 +80,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## XBlocker 应用更新组件
+
+应用更新流程参考并迁移 [bileizhen/XBlocker](https://github.com/bileizhen/XBlocker) 的 `data/AppUpdates.kt`、`core/AppRelease.kt` 与更新弹窗，基准提交 `34a16d60ec59e330687851ee3459bd24c4549bea`。保留正式版检查、GitHub / gh.dpik.top 下载源、下载进度与系统安装交互；网络改为本项目独立 OkHttp 客户端，并加入协程取消、HTTPS 重定向、大小和 SHA-256 校验。通用更新实现遵循上方 XBlocker MIT 许可，弹窗视觉继续遵循 XBlocker / SukiSU-Ultra / Miuix 的原有来源声明；未引入模块、Hook 或 LSPosed 业务。
