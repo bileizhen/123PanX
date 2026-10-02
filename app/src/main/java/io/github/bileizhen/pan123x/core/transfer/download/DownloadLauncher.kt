@@ -87,6 +87,28 @@ class DefaultDownloadLauncher(
         }
     }
 
+    /**
+     * 分享文件下载入口：来源已带 shareKey，目标为 [DownloadSource]（分享文件不属于
+     * 当前账户云盘，无法映射成 CloudFileEntity）。tree 为空时走默认保存位置策略。
+     */
+    suspend fun launch(source: DownloadSource, tree: String?): LaunchOutcome {
+        val fileName = source.fileName
+        val destination = if (tree.isNullOrBlank()) DownloadDestination.Internal(fileName) else DownloadDestination.Tree(tree, fileName)
+        return try {
+            coordinator.enqueue(source, destination)
+            logger.i(LogSource.DOWNLOAD, "已加入下载队列：${source.fileName}")
+            LaunchOutcome.Queued(source.fileName)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: IllegalStateException) {
+            logger.w(LogSource.DOWNLOAD, "加入下载队列失败：未登录")
+            LaunchOutcome.Failed(error.message ?: DownloadMessages.NOT_LOGGED_IN)
+        } catch (error: Exception) {
+            logger.e(LogSource.DOWNLOAD, "加入下载队列失败：${error.javaClass.simpleName}")
+            LaunchOutcome.Failed(DownloadMessages.ENQUEUE_FAILED)
+        }
+    }
+
     private companion object {
         const val ZIP_SUFFIX = ".zip"
     }

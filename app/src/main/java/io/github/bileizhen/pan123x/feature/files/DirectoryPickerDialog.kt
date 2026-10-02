@@ -69,6 +69,8 @@ enum class PickerMode(val title: String, val confirmLabel: String) {
     COPY("复制到", "复制到此处"),
     // M7 秒传导入（feature/offline OfflineScreen）复用同一选择器；仅追加枚举值，不影响既有两态。
     IMPORT("选择目标目录", "导入到此处"),
+    // 分享文件"保存至云盘"（feature/share SharedFilesScreen）复用同一选择器。
+    SAVE("保存至云盘", "保存到此处"),
 }
 
 data class DirectoryPickerUiState(

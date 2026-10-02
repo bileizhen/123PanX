@@ -33,6 +33,8 @@ data class DownloadSource(
     val etag: String,
     val s3KeyFlag: String,
     val isFolder: Boolean,
+    val shareKey: String = "",
+    val sharePassword: String = "",
 )
 
 /** 取链结果：[Success.url] 已是可用 CDN 直链；[Failure] 携带用户可读文案。 */
@@ -278,6 +280,7 @@ class PanDownloadResolver(
     private val transfer: OkHttpClient,
     private val logger: AppLogger,
     private val relogin: suspend () -> Boolean,
+    private val sharedApi: io.github.bileizhen.pan123x.core.network.PanSharedFilesApi? = null,
 ) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -291,7 +294,9 @@ class PanDownloadResolver(
     suspend fun resolve(source: DownloadSource): ResolveOutcome = resolveOnce(source, allowRelogin = true)
 
     private suspend fun resolveOnce(source: DownloadSource, allowRelogin: Boolean): ResolveOutcome {
-        val link = api.getDownloadLink(
+        val link = if (source.shareKey.isNotBlank()) sharedApi?.sharedDownloadLink(source)
+            ?: return ResolveOutcome.Failure("无法获取分享下载地址")
+        else api.getDownloadLink(
             fileId = source.fileId,
             fileName = source.fileName,
             size = source.size,
@@ -312,7 +317,7 @@ class PanDownloadResolver(
         }
     }
 
-    private suspend fun resolveFromLink(source: DownloadSource, link: DownloadLinkDto): ResolveOutcome {
+    internal suspend fun resolveFromLink(source: DownloadSource, link: DownloadLinkDto): ResolveOutcome {
         val direct = link.directUrl
         if (direct.isNotBlank()) {
             if (DownloadUrlCodec.isSafeDownloadUrl(direct)) {

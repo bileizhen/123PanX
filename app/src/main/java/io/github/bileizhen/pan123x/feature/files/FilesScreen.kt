@@ -482,8 +482,8 @@ fun FilesScreen(
                 when (mode) {
                     PickerMode.MOVE -> viewModel.moveSelected(targetDirId)
                     PickerMode.COPY -> viewModel.copySelected(targetDirId)
-                    // IMPORT 模式仅供离线页的目录选择，文件页不出现。
-                    PickerMode.IMPORT -> Unit
+                    // IMPORT 供离线页、SAVE 供分享查看页复用同一选择器，文件页不出现。
+                    PickerMode.IMPORT, PickerMode.SAVE -> Unit
                 }
             },
         )

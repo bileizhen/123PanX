@@ -2,8 +2,6 @@ package io.github.bileizhen.pan123x.ui.component
 
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.Intent
-import androidx.core.net.toUri
 import android.view.ViewTreeObserver
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -23,7 +21,7 @@ import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
-fun ClipboardSharePrompt(enabled: Boolean) {
+fun ClipboardSharePrompt(enabled: Boolean, onOpenInApp: (SharedLink) -> Unit = {}) {
     val uiText = io.github.bileizhen.pan123x.ui.util.rememberUiTranslator()
     val context = LocalContext.current
     val view = LocalView.current
@@ -63,20 +61,16 @@ fun ClipboardSharePrompt(enabled: Boolean) {
         }
     }
     val link = pending
-    OverlayDialog(show = enabled && link != null, title = uiText("发现 123 云盘分享"), summary = if (link?.password.isNullOrBlank()) "在浏览器中查看或转存分享文件" else "打开浏览器前会复制提取码", onDismissRequest = { pending = null }) {
+    OverlayDialog(show = enabled && link != null, title = uiText("发现 123 云盘分享"), summary = uiText("可在应用内查看、转存或下载分享文件"), onDismissRequest = { pending = null }) {
         if (link != null) {
             SelectionContainer { Text(link.url, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).testTag("clipboard_share_url")) }
             if (link.password.isNotBlank()) Text("提取码：${link.password}", modifier = Modifier.padding(bottom = 16.dp).testTag("clipboard_share_password"))
             error?.let { Text(it, color = MiuixTheme.colorScheme.error) }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextButton(uiText("忽略"), onClick = { pending = null }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("clipboard_share_ignore"))
-                TextButton(uiText("打开分享"), colors = ButtonDefaults.textButtonColorsPrimary(), modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("clipboard_share_open"), onClick = {
-                    try {
-                        if (link.password.isNotBlank()) context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("123PanX 分享提取码", link.password))
-                        context.startActivity(Intent(Intent.ACTION_VIEW, link.url.toUri()))
-                        pending = null
-                    } catch (_: android.content.ActivityNotFoundException) { error = "未找到可打开链接的浏览器" }
-                    catch (_: SecurityException) { error = "无法打开分享，请检查系统权限" }
+                TextButton(uiText("应用内打开"), colors = ButtonDefaults.textButtonColorsPrimary(), modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("clipboard_share_open"), onClick = {
+                    pending = null
+                    onOpenInApp(link)
                 })
             }
         }

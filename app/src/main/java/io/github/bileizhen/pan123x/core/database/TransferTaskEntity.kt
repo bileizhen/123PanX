@@ -68,4 +68,6 @@ data class TransferTaskEntity(
     @ColumnInfo(defaultValue = "''") val uploadId: String = "",
     @ColumnInfo(defaultValue = "0") val sourceMtime: Long = 0,
     @ColumnInfo(defaultValue = "0") val blockSize: Long = 0,
+    @ColumnInfo(defaultValue = "''") val shareKey: String = "",
+    @ColumnInfo(defaultValue = "''") val sharePassword: String = "",
 )

@@ -16,7 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * 迁移链验证 v1 → v2 → v3 → v4 → v5（禁止破坏性迁移）。
+ * 迁移链验证 v1 → v2 → v3 → v4 → v5 → v6（禁止破坏性迁移）。
  *
  * 注意：用例构造的是**旧版本**库，而 Room 会打开到**当前**版本，所以每个用例都必须注册
  * **完整迁移路径**（如 v1 用例注册 `MIGRATION_1_2 + MIGRATION_2_3 + MIGRATION_3_4 + MIGRATION_4_5`）。M4 把库
@@ -51,7 +51,7 @@ class MigrationTest {
         createLegacyVersion1Database()
 
         val database = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
             .build()
         try {
             // 打开即触发 1->2 迁移与 Room 的 schema 校验；迁移 SQL 有任何偏差都会在这里抛异常
@@ -91,7 +91,7 @@ class MigrationTest {
         createLegacyVersion1Database()
 
         val database = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
             .build()
         try {
             database.openHelper.writableDatabase
@@ -121,7 +121,7 @@ class MigrationTest {
         createVersion2Database()
 
         val database = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
             .build()
         try {
             database.openHelper.writableDatabase
@@ -168,7 +168,7 @@ class MigrationTest {
         createVersion3Database()
 
         val database = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .addMigrations(AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
             .build()
         try {
             database.openHelper.writableDatabase
@@ -203,6 +203,37 @@ class MigrationTest {
                 // accountId 外键级联：删账户连带清理任务与分片
                 database.accountDao().delete(LEGACY_ACCOUNT)
                 assertNull(database.transferTaskDao().get(LEGACY_ACCOUNT, LEGACY_TASK))
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    /**
+     * v5 -> v6 迁移：`transfer_tasks` 追加 `shareKey` / `sharePassword` 两列（默认空串），
+     * 既有任务行必须完整保留（禁止破坏性迁移）——分享文件下载的续传身份依赖这两列。
+     */
+    @Test
+    fun migrate5To6AddsShareColumnsPreservingTasks() {
+        createVersion5Database()
+
+        val database = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+            .addMigrations(AppDatabase.MIGRATION_5_6)
+            .build()
+        try {
+            database.openHelper.writableDatabase
+            runBlocking {
+                val task = database.transferTaskDao().get(LEGACY_ACCOUNT, LEGACY_TASK)
+                assertNotNull(task)
+                assertEquals("legacy.bin", task?.fileName)
+                assertEquals(TransferState.PAUSED, task?.state)
+                assertEquals("", task?.shareKey)
+                assertEquals("", task?.sharePassword)
+                // 新列参与正常读写：分享任务落库后能原样读回。
+                database.transferTaskDao().upsert(task!!.copy(shareKey = "key-x", sharePassword = "pwd1"))
+                val updated = database.transferTaskDao().get(LEGACY_ACCOUNT, LEGACY_TASK)!!
+                assertEquals("key-x", updated.shareKey)
+                assertEquals("pwd1", updated.sharePassword)
             }
         } finally {
             database.close()
@@ -411,6 +442,108 @@ class MigrationTest {
                     "4096, 'etag-77', '', '', 2, 4096, 1, 2)",
             )
             db.version = 3
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * 按 5.json 的 createSql 逐字重建 v5 结构（含 v5 identity hash 与 user_version=5）：
+     * v3 基础上 accounts 增加云盘信息元数据列，transfer_tasks 增加 s3KeyFlag 与上传会话 8 列，
+     * 新增 upload_parts 表。写入一行 PAUSED 传输任务供 v5→v6 迁移用例验证数据保留。
+     */
+    private fun createVersion5Database() {
+        val dbFile = context.getDatabasePath(dbName)
+        dbFile.parentFile?.mkdirs()
+        val db = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
+        try {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `accounts` (`accountId` TEXT NOT NULL, `displayName` TEXT NOT NULL, " +
+                    "`uid` TEXT NOT NULL, `usedBytes` INTEGER NOT NULL, `totalBytes` INTEGER NOT NULL, `avatarUri` TEXT, " +
+                    "`hasCloudInfo` INTEGER NOT NULL DEFAULT 0, `maskedPassport` TEXT NOT NULL DEFAULT '', " +
+                    "`vip` INTEGER NOT NULL DEFAULT 0, `vipLevel` INTEGER NOT NULL DEFAULT 0, `vipExpire` TEXT NOT NULL DEFAULT '', " +
+                    "`permanentBytes` INTEGER NOT NULL DEFAULT 0, `temporaryBytes` INTEGER NOT NULL DEFAULT 0, " +
+                    "`professionalTotalBytes` INTEGER NOT NULL DEFAULT 0, `professionalUsedBytes` INTEGER NOT NULL DEFAULT 0, " +
+                    "`standardTotalBytes` INTEGER NOT NULL DEFAULT 0, `standardUsedBytes` INTEGER NOT NULL DEFAULT 0, " +
+                    "`fileCount` INTEGER NOT NULL DEFAULT 0, `directTrafficBytes` INTEGER NOT NULL DEFAULT 0, " +
+                    "PRIMARY KEY(`accountId`))",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `cloud_files` (`accountId` TEXT NOT NULL, `fileId` INTEGER NOT NULL, " +
+                    "`parentFileId` INTEGER NOT NULL, `fileName` TEXT NOT NULL, `isFolder` INTEGER NOT NULL, " +
+                    "`size` INTEGER NOT NULL, `etag` TEXT NOT NULL, `s3KeyFlag` TEXT NOT NULL, " +
+                    "`createAt` INTEGER NOT NULL, `updateAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`accountId`, `fileId`), " +
+                    "FOREIGN KEY(`accountId`) REFERENCES `accounts`(`accountId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `directory_states` (`accountId` TEXT NOT NULL, `dirId` INTEGER NOT NULL, " +
+                    "`total` INTEGER NOT NULL, `allLoaded` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`accountId`, `dirId`), " +
+                    "FOREIGN KEY(`accountId`) REFERENCES `accounts`(`accountId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `transfer_tasks` (`accountId` TEXT NOT NULL, `taskId` TEXT NOT NULL, " +
+                    "`fileId` INTEGER, `fileName` TEXT NOT NULL, `direction` TEXT NOT NULL, `state` TEXT NOT NULL, " +
+                    "`size` INTEGER NOT NULL, `etag` TEXT NOT NULL, `targetUri` TEXT NOT NULL, " +
+                    "`destinationTree` TEXT NOT NULL DEFAULT '', `segments` INTEGER NOT NULL DEFAULT 0, " +
+                    "`downloadedBytes` INTEGER NOT NULL, `createTime` INTEGER NOT NULL, `updateTime` INTEGER NOT NULL, " +
+                    "`error` TEXT, `s3KeyFlag` TEXT NOT NULL DEFAULT '', `parentFileId` INTEGER NOT NULL DEFAULT 0, " +
+                    "`bucket` TEXT NOT NULL DEFAULT '', `storageNode` TEXT NOT NULL DEFAULT '', `uploadKey` TEXT NOT NULL DEFAULT '', " +
+                    "`uploadId` TEXT NOT NULL DEFAULT '', `sourceMtime` INTEGER NOT NULL DEFAULT 0, `blockSize` INTEGER NOT NULL DEFAULT 0, " +
+                    "PRIMARY KEY(`accountId`, `taskId`), " +
+                    "FOREIGN KEY(`accountId`) REFERENCES `accounts`(`accountId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `download_segments` (" +
+                    "`accountId` TEXT NOT NULL, `taskId` TEXT NOT NULL, `segmentIndex` INTEGER NOT NULL, " +
+                    "`start` INTEGER NOT NULL, `end` INTEGER NOT NULL, `downloaded` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`accountId`, `taskId`, `segmentIndex`), " +
+                    "FOREIGN KEY(`accountId`, `taskId`) REFERENCES `transfer_tasks`(`accountId`, `taskId`) " +
+                    "ON UPDATE NO ACTION ON DELETE CASCADE )",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `upload_parts` (" +
+                    "`accountId` TEXT NOT NULL, `taskId` TEXT NOT NULL, `partNumber` INTEGER NOT NULL, `size` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`accountId`, `taskId`, `partNumber`), " +
+                    "FOREIGN KEY(`accountId`, `taskId`) REFERENCES `transfer_tasks`(`accountId`, `taskId`) " +
+                    "ON UPDATE NO ACTION ON DELETE CASCADE )",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_cloud_files_accountId_parentFileId` ON `cloud_files` (`accountId`, `parentFileId`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_directory_states_accountId` ON `directory_states` (`accountId`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_transfer_tasks_accountId_state` ON `transfer_tasks` (`accountId`, `state`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_download_segments_accountId_taskId` " +
+                    "ON `download_segments` (`accountId`, `taskId`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_upload_parts_accountId_taskId` " +
+                    "ON `upload_parts` (`accountId`, `taskId`)",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+            )
+            // v5 的 identity hash（来自 app/schemas/.../5.json setupQueries）
+            db.execSQL(
+                "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b529276c34814f3d3b75616da08db5b2')",
+            )
+            db.execSQL(
+                "INSERT INTO `accounts` (`accountId`, `displayName`, `uid`, `usedBytes`, `totalBytes`) " +
+                    "VALUES ('$LEGACY_ACCOUNT', '旧账户', '1', 0, 0)",
+            )
+            db.execSQL(
+                "INSERT INTO `transfer_tasks` (`accountId`, `taskId`, `fileId`, `fileName`, `direction`, `state`, " +
+                    "`size`, `etag`, `targetUri`, `destinationTree`, `segments`, `downloadedBytes`, `createTime`, `updateTime`) " +
+                    "VALUES ('$LEGACY_ACCOUNT', '$LEGACY_TASK', 77, 'legacy.bin', 'DOWNLOAD', 'PAUSED', " +
+                    "4096, 'etag-77', '', '', 2, 4096, 1, 2)",
+            )
+            db.version = 5
         } finally {
             db.close()
         }

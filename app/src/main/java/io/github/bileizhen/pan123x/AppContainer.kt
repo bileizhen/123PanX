@@ -164,6 +164,7 @@ class AppContainer(context: Context, overrides: ContainerOverrides = ContainerOv
         transfer = transferClient,
         logger = logger,
         relogin = { authRepository.relogin() is ApiResult.Success },
+        sharedApi = panApi,
     )
     val downloadStorage = DownloadStorage(appContext, logger)
     val engineConfig = NsfxConfig()
@@ -245,6 +246,20 @@ class AppContainer(context: Context, overrides: ContainerOverrides = ContainerOv
     )
     // 文件页多选"分享"入口的窄接口，UI / ViewModel 不直接碰分享 API。
     val shareLauncher = ShareLauncher { fileIds, options -> shareRepository.create(fileIds, options) }
+
+    // ---- 应用内查看他人分享：列表/转存/分享直链下载----
+    // panApi 同时实现 PanShareApi 与 PanSharedFilesApi；下载经 DefaultDownloadLauncher 的
+    // DownloadSource 重载（来源自带 shareKey）。转存成功即刷新目标目录缓存并联动账户信息。
+    val sharedFilesRepository = io.github.bileizhen.pan123x.data.share.SharedFilesRepository(
+        api = panApi,
+        manager = accountManager,
+        relogin = { authRepository.relogin() is ApiResult.Success },
+        enqueue = { source, tree -> downloadLauncher.launch(source, tree) },
+        onSaved = { accountId, targetId ->
+            fileRepository.refreshDirectory(targetId)
+            onCloudContentChanged(accountId)
+        },
+    )
 
     // ---- M7 离线下载 / 秒传----
     val offlineRepository = OfflineRepository(

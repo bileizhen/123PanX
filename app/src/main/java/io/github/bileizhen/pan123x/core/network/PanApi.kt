@@ -186,7 +186,7 @@ class PanApi(
     private val logger: AppLogger? = null,
     /** 分享三端点的固定 base；测试注入 MockWebServer 地址。 */
     shareBaseUrl: String = ApiHosts.SHARE_BASE_URL,
-) : PanAuthApi, PanDeviceApi, PanFileApi, PanFileOpsApi, PanDownloadApi, PanUploadApi, PanShareApi, PanOfflineApi {
+) : PanAuthApi, PanDeviceApi, PanFileApi, PanFileOpsApi, PanDownloadApi, PanUploadApi, PanShareApi, PanSharedFilesApi, PanOfflineApi {
 
     private val http = client
     private val primaryBaseUrl: String = primaryBaseUrl.trimEnd('/')
@@ -686,6 +686,70 @@ class PanApi(
             val dto = (root["data"] as? JsonObject)?.let(CreateShareDto::fromData)
                 ?: return@executeOnShareHost ApiResult.ParseError("创建分享响应缺少 ShareKey (HTTP $httpCode)")
             ApiResult.Success(dto)
+        }
+    }
+
+    override suspend fun sharedFiles(key: String, password: String, parentId: Long, page: Int, next: String): ApiResult<FileListDto> {
+        val spec = CallSpec("GET", "/b/api/share/get", null, setOf(0), retryOnServerError = true,
+            query = linkedMapOf("limit" to "100", "next" to next, "orderBy" to "file_id", "orderDirection" to "asc",
+                "shareKey" to key, "SharePwd" to password, "ParentFileId" to parentId.toString(), "Page" to page.toString()),
+            readTimeoutSeconds = 30)
+        return execute(spec) { root, _ ->
+            val data = root["data"] as? JsonObject
+            if (data?.get("Expired")?.toString() == "true") ApiResult.ApiError(5104, "分享已失效")
+            else FileListDto.fromJsonElement(root)?.let { ApiResult.Success(it) }
+                ?: ApiResult.ParseError("无法读取分享文件列表")
+        }
+    }
+
+    // Request fields and status values follow the official share web client's copy/save flow.
+    override suspend fun saveSharedFiles(key: String, password: String, files: List<FileItemDto>, targetId: Long): ApiResult<SharedSaveTask> {
+        val body = buildJsonObject {
+            put("shareKey", key)
+            put("sharePwd", if (password.isBlank()) JsonNull else JsonPrimitive(password))
+            put("currentLevel", if (files.any { it.parentFileId != 0L }) 1 else 0)
+            put("superAdmin", JsonNull)
+            put("fileList", buildJsonArray { files.forEach { file -> add(buildJsonObject {
+                put("fileID", file.fileId); put("size", file.size); put("etag", file.etag)
+                put("type", if (file.isFolder) 1 else 0); put("parentFileID", targetId)
+                put("fileName", file.fileName); put("driveID", 0)
+            }) } })
+        }.toString()
+        return execute(CallSpec("POST", "/b/api/restful/goapi/v1/file/copy/save", body, setOf(0),
+            retryOnServerError = false, readTimeoutSeconds = 30)) { root, _ ->
+            val taskId = (root["data"] as? JsonObject)?.optString("taskID", "taskId").orEmpty()
+            if (taskId.isBlank()) ApiResult.ParseError("服务器未返回转存任务")
+            else ApiResult.Success(SharedSaveTask(taskId, complete = false))
+        }
+    }
+
+    override suspend fun sharedSaveStatus(taskId: String): ApiResult<SharedSaveTask> =
+        execute(CallSpec("GET", "/b/api/restful/goapi/v1/file/copy/save/get", null, setOf(0),
+            retryOnServerError = true, query = linkedMapOf("taskID" to taskId), readTimeoutSeconds = 30)) { root, _ ->
+            val data = root["data"] as? JsonObject
+            val status = data?.optLong("status", default = -1L)?.toInt() ?: -1
+            if (status < 0) ApiResult.ParseError("无法读取转存状态")
+            else if (data?.optLong("errorCode") == 24L || status !in 0..2)
+                ApiResult.ApiError(24, data?.optString("reason").orEmpty().ifBlank { "转存失败" })
+            else ApiResult.Success(SharedSaveTask(taskId, complete = status == 2))
+        }
+
+    override suspend fun sharedDownloadLink(source: io.github.bileizhen.pan123x.core.transfer.download.DownloadSource): ApiResult<DownloadLinkDto> {
+        val body = buildJsonObject {
+            put("ShareKey", source.shareKey); put("SharePwd", source.sharePassword)
+            put("FileID", source.fileId); put("S3keyFlag", source.s3KeyFlag)
+            put("Size", source.size); put("Etag", source.etag)
+        }.toString()
+        return execute(CallSpec("POST", "/b/api/v2/share/download/info", body, setOf(0),
+            retryOnServerError = false, readTimeoutSeconds = 30)) { root, _ ->
+            val data = root["data"] as? JsonObject
+            val dispatch = (data?.get("dispatchList") as? JsonArray)?.firstOrNull() as? JsonObject
+            val prefix = dispatch?.optString("prefix").orEmpty()
+            val path = data?.optString("downloadPath").orEmpty()
+            val url = if (prefix.isNotBlank() && path.isNotBlank()) prefix + path
+                else data?.optString("DownloadURL", "DownloadUrl", "downloadUrl").orEmpty()
+            if (url.isBlank()) ApiResult.ParseError("服务器未返回分享下载地址")
+            else ApiResult.Success(DownloadLinkDto(rawUrl = url, directUrl = "", trafficLimited = false, serverMessage = ""))
         }
     }
 

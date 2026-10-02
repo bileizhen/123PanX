@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DownloadSegmentEntity::class,
         UploadPartEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -31,7 +31,14 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase = Room.databaseBuilder(
             context.applicationContext, AppDatabase::class.java, "pan123x.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
+
+        val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `transfer_tasks` ADD COLUMN `shareKey` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `transfer_tasks` ADD COLUMN `sharePassword` TEXT NOT NULL DEFAULT ''")
+            }
+        }
 
         /** Add public cloud metadata without changing accounts, credentials or transfer rows. */
         val MIGRATION_4_5: Migration = object : Migration(4, 5) {

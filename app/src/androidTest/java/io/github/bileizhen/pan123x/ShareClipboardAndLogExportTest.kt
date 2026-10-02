@@ -99,38 +99,26 @@ class ShareClipboardAndLogExportTest {
         compose.onNodeWithTag("clipboard_share_open").assertDoesNotExist()
     }
 
-    @Test fun reportedMobileSharePromptsAndOpensOriginalRouteWithPassword() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val opened = java.util.concurrent.atomic.AtomicReference<android.content.Intent>()
-        val monitor = object : android.app.Instrumentation.ActivityMonitor() {
-            override fun onStartActivity(intent: android.content.Intent): android.app.Instrumentation.ActivityResult? {
-                if (intent.action != android.content.Intent.ACTION_VIEW) return null
-                opened.set(intent)
-                return android.app.Instrumentation.ActivityResult(android.app.Activity.RESULT_CANCELED, null)
-            }
+    @Test fun reportedMobileSharePromptsAndOpensInAppViewerWithPassword() {
+        compose.runOnIdle {
+            compose.activity.getSystemService(ClipboardManager::class.java).setPrimaryClip(
+                ClipData.newPlainText("测试移动端分享", reportedMobileShare))
         }
-        instrumentation.addMonitor(monitor)
-        try {
-            compose.runOnIdle {
-                compose.activity.getSystemService(ClipboardManager::class.java).setPrimaryClip(
-                    ClipData.newPlainText("测试移动端分享", reportedMobileShare))
-            }
-            compose.waitUntil(5_000) { compose.onAllNodesWithTag("clipboard_share_password").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithTag("clipboard_share_password").assertTextContains("kkaE", substring = true)
-            compose.onNodeWithTag("clipboard_share_url").assertTextContains("1838272570.mshare.123pan.cn/123pan/O0mFTd-uHjIh?pwd=kkaE", substring = true)
-            capture("mobile-share")
-            compose.onNodeWithTag("clipboard_share_open").performClick()
-            compose.waitUntil(5_000) { opened.get() != null }
-            val uri = opened.get().data!!
-            assertEquals("1838272570.mshare.123pan.cn", uri.host)
-            assertEquals("/123pan/O0mFTd-uHjIh", uri.path)
-            assertEquals("kkaE", uri.getQueryParameter("pwd"))
-            assertNull(uri.getQueryParameter("pendingAction"))
-            compose.runOnIdle {
-                assertEquals("kkaE", compose.activity.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString())
-            }
-            compose.onNodeWithTag("clipboard_share_open").assertDoesNotExist()
-        } finally { instrumentation.removeMonitor(monitor) }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("clipboard_share_password").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("clipboard_share_password").assertTextContains("kkaE", substring = true)
+        compose.onNodeWithTag("clipboard_share_url").assertTextContains("1838272570.mshare.123pan.cn/123pan/O0mFTd-uHjIh?pwd=kkaE", substring = true)
+        capture("mobile-share")
+        compose.onNodeWithTag("clipboard_share_open").performClick()
+        // 应用内查看页：面包屑可先渲染；测试环境网络仅允许本地服务器，最终给出整页错误与重试。
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("shared-files-root").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("shared-files-root").assertIsDisplayed()
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("shared-files-error-page").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("shared-files-retry").assertIsDisplayed()
+        capture("mobile-share-in-app")
+        // 返回键离开分享查看页；提示框已消费，不再出现。
+        compose.onNodeWithTag("navigate_back").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("shared-files-root").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithTag("clipboard_share_open").assertDoesNotExist()
     }
 
     @Test fun mobileShareCopiedWhileAwayIsRecognizedOnResume() {

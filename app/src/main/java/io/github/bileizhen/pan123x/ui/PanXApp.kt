@@ -90,6 +90,8 @@ import io.github.bileizhen.pan123x.feature.preview.PreviewViewModel
 import io.github.bileizhen.pan123x.feature.preview.TextPreviewScreen
 import io.github.bileizhen.pan123x.feature.share.ShareScreen
 import io.github.bileizhen.pan123x.feature.share.ShareViewModel
+import io.github.bileizhen.pan123x.feature.share.SharedFilesScreen
+import io.github.bileizhen.pan123x.feature.share.SharedFilesViewModel
 import io.github.bileizhen.pan123x.ui.util.FileKind
 import io.github.bileizhen.pan123x.feature.transfer.TransferDetailScreen
 import io.github.bileizhen.pan123x.feature.transfer.TransferScreen
@@ -300,6 +302,7 @@ fun PanXApp(container: AppContainer) {
                                     "proxy" -> "代理"; "settings" -> "设置"; "appearance" -> "外观"; "about" -> "关于"
                                     "accounts" -> "账户管理"; "offline" -> "离线下载"; "recycle" -> "回收站"
                                     "cloud-info" -> "云盘信息"
+                                    "shared-files" -> "分享文件"
                                     "license" -> "开源许可"; "notices" -> "第三方声明"
                                     "privacy" -> "隐私"
                                     "transfer" -> "传输详情"; "login" -> "登录"; "diagnostics" -> "诊断"
@@ -311,6 +314,30 @@ fun PanXApp(container: AppContainer) {
                                     if (page.kind == "about") {
                                         AboutScreen(onBack = navigateBack, onLicense = { open("license") }, onNotices = { open("notices") }, onPrivacy = { open("privacy") }, enableBlur = settings.blur)
                                     } else if (page.kind == "directory") filesContent(page.id.toLong())
+                                    else if (page.kind == "shared-files") {
+                                        // id 携带 "url|password"（SharedLink.url 由解析器规范化，不含 '|'）。
+                                        val sharedVm: SharedFilesViewModel = viewModel(
+                                            key = "shared-files-${page.id}",
+                                            factory = viewModelFactory {
+                                                SharedFilesViewModel(
+                                                    link = io.github.bileizhen.pan123x.core.share.SharedLink(page.id.substringBefore('|'), page.id.substringAfter('|', "")),
+                                                    actions = container.sharedFilesRepository,
+                                                )
+                                            },
+                                        )
+                                        SharedFilesScreen(
+                                            viewModel = sharedVm,
+                                            directoryPickerFactory = directoryPickerFactory,
+                                            onBack = { (pageBackActions.current ?: navigateBack).invoke() },
+                                            onOpenLogin = { open("login") },
+                                            onDownloadsQueued = {
+                                                transfers.showQueuedDownloads()
+                                                selectedTab = 1
+                                                breadcrumbStack = listOf(BREADCRUMB_ROOT)
+                                                while (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
+                                            },
+                                        )
+                                    }
                                     else ScreenFrame(title, { (pageBackActions.current ?: navigateBack).invoke() }) {
                                         when (page.kind) {
                                             "directory" -> filesContent(page.id.toLong())
@@ -412,7 +439,10 @@ fun PanXApp(container: AppContainer) {
                     )
                     io.github.bileizhen.pan123x.feature.logs.SendLogDialog(showLogExport, container.diagnosticReport) { showLogExport = false }
                     io.github.bileizhen.pan123x.feature.about.UpdateDialog(updateVm)
-                    io.github.bileizhen.pan123x.ui.component.ClipboardSharePrompt(settings.recognizeShareClipboard)
+                    io.github.bileizhen.pan123x.ui.component.ClipboardSharePrompt(settings.recognizeShareClipboard, onOpenInApp = { link ->
+                        // 应用内查看分享：页面 id 携带规范化 URL 与提取码。
+                        open("shared-files", "${link.url}|${link.password}")
+                    })
                     NavigationBackHandler(
                         state = rememberNavigationEventState(NavigationEventInfo.None),
                         isBackEnabled = pageBackActions.current != null || (backStack.size > 1 && !usePredictiveBack),

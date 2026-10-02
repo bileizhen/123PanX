@@ -15,8 +15,8 @@ android {
         applicationId = "io.github.bileizhen.pan123x"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.4.3"
+        versionCode = 10
+        versionName = "0.4.4"
         testInstrumentationRunner = "io.github.bileizhen.pan123x.PanXTestRunner"
     }
     buildFeatures { compose = true; buildConfig = true }

@@ -225,6 +225,9 @@ class DownloadCoordinator(
                 createTime = now,
                 updateTime = now,
                 error = null,
+                s3KeyFlag = source.s3KeyFlag,
+                shareKey = source.shareKey,
+                sharePassword = source.sharePassword,
             ),
         )
         sources[taskId] = source
@@ -585,8 +588,10 @@ class DownloadCoordinator(
         fileName = fileName,
         size = size,
         etag = etag,
-        s3KeyFlag = "",
+        s3KeyFlag = s3KeyFlag,
         isFolder = false,
+        shareKey = shareKey,
+        sharePassword = sharePassword,
     )
 
     private fun SegmentSnapshot.toEntity(accountId: String, taskId: String): DownloadSegmentEntity =
