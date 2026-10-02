@@ -384,7 +384,7 @@ class DownloadCoordinator(
 
         val workDir = workDirFor(accountId, taskId)
         workDir.mkdirs()
-        val progress = MutableStateFlow(0L)
+        val progress = MutableStateFlow(taskDao.get(accountId, taskId)?.downloadedBytes ?: 0L)
         val segments = MutableStateFlow<List<SegmentSnapshot>?>(null)
         val tracker = segmentPlans.getOrPut(taskId) { SegmentPlanTracker() }
         val written = coroutineScope {
@@ -404,7 +404,12 @@ class DownloadCoordinator(
                     telemetry = { telemetry -> segments.value = telemetry.segments },
                 )
             } finally {
-                sidecar.cancel()
+                withContext(NonCancellable) {
+                    sidecar.cancel()
+                    sidecar.join()
+                    persistSegments(accountId, taskId, segments.value, tracker)
+                    taskDao.updateProgress(accountId, taskId, progress.value, TransferState.RUNNING.name, System.currentTimeMillis())
+                }
             }
         }
 
@@ -449,13 +454,7 @@ class DownloadCoordinator(
                 lastBytes = done
                 taskDao.updateProgress(accountId, taskId, done, TransferState.RUNNING.name, System.currentTimeMillis())
             }
-            segments.value?.let { snapshots ->
-                val plan = tracker.planOf(snapshots)
-                if (plan != tracker.lastPlan) {
-                    tracker.lastPlan = plan
-                    segmentDao.replaceFor(accountId, taskId, snapshots.map { it.toEntity(accountId, taskId) })
-                }
-            }
+            persistSegments(accountId, taskId, segments.value, tracker)
         }
     }
 
@@ -540,7 +539,7 @@ class DownloadCoordinator(
         updateTask(accountId, taskId) { it.copy(state = state, updateTime = System.currentTimeMillis()) }
     }
 
-    /** 任务完成前的最后一次分段落库（仍按计划去重，避免与旁路协程重复写）。 */
+    /** Throttled progress mirror: replace a changed plan, update only changed counters otherwise. */
     private suspend fun persistSegments(
         accountId: String,
         taskId: String,
@@ -549,9 +548,15 @@ class DownloadCoordinator(
     ) {
         if (snapshots.isNullOrEmpty()) return
         val plan = tracker.planOf(snapshots)
-        if (plan == tracker.lastPlan) return
+        if (plan != tracker.lastPlan) {
+            segmentDao.replaceFor(accountId, taskId, snapshots.map { it.toEntity(accountId, taskId) })
+            updateTask(accountId, taskId) { it.copy(segments = snapshots.size) }
+        } else {
+            val changed = snapshots.filter { tracker.lastDownloaded[it.index] != it.downloaded }
+            if (changed.isNotEmpty()) segmentDao.updateProgress(changed.map { it.toEntity(accountId, taskId) })
+        }
         tracker.lastPlan = plan
-        segmentDao.replaceFor(accountId, taskId, snapshots.map { it.toEntity(accountId, taskId) })
+        tracker.lastDownloaded = snapshots.associate { it.index to it.downloaded }
     }
 
     private fun closeQuietly(opened: OpenedSink, fileName: String) {
@@ -615,9 +620,10 @@ class DownloadCoordinator(
         var opened: OpenedSink? = null
     }
 
-    /** 分段计划去重状态：(index,start,end) 三元组序列，下载量变化不触发写库。 */
+    /** 分段计划去重状态：(index,start,end) 三元组序列，计划稳定时仅更新变化的下载量。 */
     private class SegmentPlanTracker {
         var lastPlan: List<Triple<Int, Long, Long>>? = null
+        var lastDownloaded: Map<Int, Long> = emptyMap()
 
         fun planOf(snapshots: List<SegmentSnapshot>): List<Triple<Int, Long, Long>> =
             snapshots.map { Triple(it.index, it.start, it.end) }

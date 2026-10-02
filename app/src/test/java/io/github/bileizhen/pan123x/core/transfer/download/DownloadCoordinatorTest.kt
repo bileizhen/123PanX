@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -132,6 +133,7 @@ class DownloadCoordinatorTest {
     private class FakeDownloadSegmentDao : DownloadSegmentDao() {
         val rows = MutableStateFlow<List<DownloadSegmentEntity>>(emptyList())
         var replaceCalls = 0
+        var updateCalls = 0
 
         fun seed(vararg segments: DownloadSegmentEntity) {
             rows.value = rows.value + segments
@@ -144,6 +146,12 @@ class DownloadCoordinatorTest {
         override suspend fun insert(segments: List<DownloadSegmentEntity>) {
             val keys = segments.mapTo(mutableSetOf()) { Triple(it.accountId, it.taskId, it.segmentIndex) }
             rows.value = rows.value.filterNot { Triple(it.accountId, it.taskId, it.segmentIndex) in keys } + segments
+        }
+
+        override suspend fun updateProgress(segments: List<DownloadSegmentEntity>) {
+            updateCalls++
+            val updates = segments.associateBy { Triple(it.accountId, it.taskId, it.segmentIndex) }
+            rows.value = rows.value.map { updates[Triple(it.accountId, it.taskId, it.segmentIndex)] ?: it }
         }
 
         override suspend fun clear(accountId: String, taskId: String) {
@@ -456,6 +464,56 @@ class DownloadCoordinatorTest {
         // 最终落库的是最后一次计划（B）
         assertEquals(listOf(0, 1), f.segments.rows.value.map { it.segmentIndex })
         assertEquals(1_499L, f.segments.rows.value.first { it.segmentIndex == 0 }.end)
+    }
+
+    @Test fun unchangedPlanMirrorsIncreasingBytesWhileRunningAndAtCompletion() = runTest {
+        val f = fixture()
+        f.executor.ticks = 10
+        f.executor.tickDelayMs = 100
+        f.executor.planAt = { index -> listOf(SegmentSnapshot(0, 0, 1000, (index + 1) * 100L)) }
+        val id = f.coordinator.enqueue(source(size = 1000), DownloadDestination.Internal("a.bin"))
+        advanceTimeBy(450)
+        runCurrent()
+        val first = f.segments.rows.value.single().downloaded
+        assertTrue(first > 0)
+        assertEquals(1, f.tasks.get("acc-1", id)!!.segments)
+        assertEquals(TransferState.RUNNING, f.tasks.get("acc-1", id)!!.state)
+        advanceTimeBy(400)
+        runCurrent()
+        assertTrue(f.segments.rows.value.single().downloaded > first)
+        advanceUntilIdle()
+        assertEquals(1000L, f.segments.rows.value.single().downloaded)
+        assertEquals(1, f.segments.replaceCalls)
+        assertTrue(f.segments.updateCalls > 0)
+        assertTrue(f.segments.updateCalls < f.executor.telemetryEmissions)
+    }
+
+    @Test fun pauseBeforeThrottleFlushesSegmentAndTotalBytes() = runTest {
+        val f = fixture()
+        f.executor.ticks = 1
+        f.executor.tickDelayMs = 10
+        f.executor.gate = CompletableDeferred()
+        f.executor.planAt = { listOf(SegmentSnapshot(0, 0, 1000, 100)) }
+        val id = f.coordinator.enqueue(source(size = 1000), DownloadDestination.Internal("a.bin"))
+        advanceTimeBy(20)
+        runCurrent()
+        assertTrue(f.segments.rows.value.isEmpty())
+        f.coordinator.pause(id)
+        assertEquals(TransferState.PAUSED, f.tasks.get("acc-1", id)!!.state)
+        assertEquals(100L, f.tasks.get("acc-1", id)!!.downloadedBytes)
+        assertEquals(100L, f.segments.rows.value.single().downloaded)
+    }
+
+    @Test fun quickDownloadPersistsFinalSegmentWithoutWaitingForThrottle() = runTest {
+        val f = fixture()
+        f.executor.ticks = 1
+        f.executor.planAt = { listOf(SegmentSnapshot(0, 0, 100, 100)) }
+        val id = f.coordinator.enqueue(source(size = 100), DownloadDestination.Internal("a.bin"))
+        advanceUntilIdle()
+        assertEquals(TransferState.COMPLETED, f.tasks.get("acc-1", id)!!.state)
+        assertEquals(100L, f.segments.rows.value.single().downloaded)
+        assertEquals(1, f.segments.replaceCalls)
+        assertEquals(0, f.segments.updateCalls)
     }
 
     // ---- 暂停 / 取消 ----

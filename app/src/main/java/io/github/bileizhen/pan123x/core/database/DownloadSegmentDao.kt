@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -23,6 +24,10 @@ abstract class DownloadSegmentDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun insert(segments: List<DownloadSegmentEntity>)
+
+    /** Update changed byte counters without deleting or rebuilding the segment plan. */
+    @Update
+    abstract suspend fun updateProgress(segments: List<DownloadSegmentEntity>)
 
     /** 清空某任务的全部分段（取消下载、断点失效重置时使用）。 */
     @Query("DELETE FROM download_segments WHERE accountId = :accountId AND taskId = :taskId")

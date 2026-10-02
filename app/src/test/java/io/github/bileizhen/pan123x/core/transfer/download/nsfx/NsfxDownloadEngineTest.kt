@@ -94,11 +94,13 @@ class NsfxDownloadEngineTest {
         val storage = NsfxStorage(dir)
         val sink = FileSegmentSink(sinkFile(), body.size.toLong())
 
+        val telemetry = mutableListOf<EngineTelemetry>()
         val result = engine().download(
             NsfxRequest("t2", server.url("/file").toString(), expectedSize = 0, etag = ""),
-            storage, sink,
+            storage, sink, telemetry = { telemetry += it },
         )
 
+        assertEquals(listOf(SegmentSnapshot(0, 0, body.size.toLong(), body.size.toLong())), telemetry.last().segments)
         assertEquals(body.size.toLong(), result)
         sink.close()
         assertArrayEquals(body, sinkFile().readBytes())

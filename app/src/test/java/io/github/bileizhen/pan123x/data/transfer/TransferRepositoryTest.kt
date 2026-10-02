@@ -146,6 +146,11 @@ class TransferRepositoryTest {
             rows.value = rows.value.filterNot { Triple(it.accountId, it.taskId, it.segmentIndex) in keys } + segments
         }
 
+        override suspend fun updateProgress(segments: List<DownloadSegmentEntity>) {
+            val updates = segments.associateBy { Triple(it.accountId, it.taskId, it.segmentIndex) }
+            rows.value = rows.value.map { updates[Triple(it.accountId, it.taskId, it.segmentIndex)] ?: it }
+        }
+
         override suspend fun clear(accountId: String, taskId: String) {
             rows.value = rows.value.filterNot { it.accountId == accountId && it.taskId == taskId }
         }

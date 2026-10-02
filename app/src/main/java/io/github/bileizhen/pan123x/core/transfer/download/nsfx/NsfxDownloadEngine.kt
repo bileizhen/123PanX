@@ -305,7 +305,11 @@ class NsfxDownloadEngine(
             }
         } finally {
             workers.values.forEach { it.cancel() }
-            withContext(NonCancellable) { workers.values.forEach { it.join() } }
+            withContext(NonCancellable) {
+                workers.values.forEach { it.join() }
+                progress(bytes.get(), info.size, 0)
+                telemetry(telemetryOf(0, pieceSize, segments, info.size, 0))
+            }
         }
     }
 
@@ -412,46 +416,54 @@ class NsfxDownloadEngine(
                     val pieceSize = maxOf(1L, total)
                     progress(0, total, 0)
                     telemetry(EngineTelemetry(1, pieceSize, ByteArray(1), 0, listOf(SegmentSnapshot(0, 0, total, 0))))
-                    response.stream.use { input ->
-                        val buffer = ByteArray(128 * 1024)
-                        val segmentLimiter = RateLimiter(config.segmentSpeedLimit)
-                        while (true) {
-                            currentCoroutineContext().ensureActive()
-                            val n = input.read(buffer)
-                            if (n < 0) break
-                            if (consumeBytes != null) consumeBytes.invoke(n) else limiter.consume(n)
-                            segmentLimiter.consume(n)
-                            sink.writeAt(done, buffer, n)
-                            done += n
-                            val now = System.nanoTime()
-                            if (now - last > 1_000_000_000) {
-                                val instant = ((done - previous) * 1e9 / (now - last)).toLong()
-                                sink.sync()
-                                progress(done, total, instant)
-                                telemetry(
-                                    EngineTelemetry(
-                                        1, pieceSize,
-                                        byteArrayOf(((done * 255) / pieceSize).coerceIn(0L, 255L).toByte()),
-                                        instant,
-                                        listOf(SegmentSnapshot(0, 0, total, done)),
-                                    ),
-                                )
-                                last = now
-                                previous = done
+                    try {
+                        response.stream.use { input ->
+                            val buffer = ByteArray(128 * 1024)
+                            val segmentLimiter = RateLimiter(config.segmentSpeedLimit)
+                            while (true) {
+                                currentCoroutineContext().ensureActive()
+                                val n = input.read(buffer)
+                                if (n < 0) break
+                                if (consumeBytes != null) consumeBytes.invoke(n) else limiter.consume(n)
+                                segmentLimiter.consume(n)
+                                sink.writeAt(done, buffer, n)
+                                done += n
+                                val now = System.nanoTime()
+                                if (now - last > 1_000_000_000) {
+                                    val instant = ((done - previous) * 1e9 / (now - last)).toLong()
+                                    sink.sync()
+                                    progress(done, total, instant)
+                                    telemetry(
+                                        EngineTelemetry(
+                                            1, pieceSize,
+                                            byteArrayOf(((done * 255) / pieceSize).coerceIn(0L, 255L).toByte()),
+                                            instant,
+                                            listOf(SegmentSnapshot(0, 0, total, done)),
+                                        ),
+                                    )
+                                    last = now
+                                    previous = done
+                                }
+                                if (now - lastSync > 1_000_000_000) {
+                                    sink.sync()
+                                    lastSync = now
+                                }
                             }
-                            if (now - lastSync > 1_000_000_000) {
-                                sink.sync()
-                                lastSync = now
-                            }
+                            response.markConsumed()
+                            sink.sync()
                         }
-                        response.markConsumed()
-                        sink.sync()
+                    } finally {
+                        progress(done, total, 0)
+                        telemetry(EngineTelemetry(0, pieceSize, ByteArray(1), 0,
+                            listOf(SegmentSnapshot(0, 0, total.coerceAtLeast(done), done))))
                     }
                     if (info.size >= 0 && done != info.size) {
                         throw SizeMismatch("文件大小已变化：期望 ${info.size}，实际 $done")
                     }
                     if (response.length >= 0 && done != response.length) throw IOException("incomplete transfer")
                     progress(done, done, 0)
+                    telemetry(EngineTelemetry(0, maxOf(1L, done), byteArrayOf(255.toByte()), 0,
+                        listOf(SegmentSnapshot(0, 0, done, done))))
                     return done
                 }
             } catch (e: IOException) {
