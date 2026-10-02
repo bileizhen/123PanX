@@ -9,6 +9,7 @@
 <p>
   <a href="https://github.com/bileizhen/123PanX/stargazers"><img src="https://img.shields.io/github/stars/bileizhen/123PanX" alt="GitHub Stars"></a>
   <a href="https://github.com/bileizhen/123PanX/issues"><img src="https://img.shields.io/github/issues/bileizhen/123PanX" alt="GitHub Issues"></a>
+  <a href="https://github.com/bileizhen/123PanX/releases/latest"><img src="https://img.shields.io/github/v/release/bileizhen/123PanX" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-green.svg" alt="GPL-3.0 License"></a>
   <a href="#兼容性"><img src="https://img.shields.io/badge/Android-8.0%2B-blue.svg" alt="Android 8.0+"></a>
   <a href="#功能特性"><img src="https://img.shields.io/badge/UI-Compose_%2B_Miuix-3C80FF.svg" alt="Compose + Miuix"></a>
@@ -63,7 +64,9 @@
 - 不使用代理、系统代理、手动配置和自动探测四种代理模式
 - 手动 HTTP / SOCKS5 代理，支持认证和域名 / 内网直连名单
 - 从“我的”导出脱敏日志 ZIP，便于反馈问题
-- 从“我的 → 检查更新”查询正式发布版本，发现更新后打开发布页
+- 启动时自动检查 GitHub 正式版，也可从“我的 → 检查更新”随时检查
+- 更新下载可选 GitHub 原站或 `gh.dpik.top` 镜像，显示进度并支持取消 / 重试
+- 安装包通过大小与 SHA-256 校验后请求系统安装；正式版升级核对包名与签名
 
 ### 界面与语言
 
@@ -85,7 +88,7 @@
 
 ## 安装
 
-目前项目处于开发中，[Releases](https://github.com/bileizhen/123PanX/releases) 尚未提供正式安装包。可使用本地源码按下文构建；正式发布后从 Releases 获取 APK。
+从 [Releases](https://github.com/bileizhen/123PanX/releases/latest) 下载正式签名 APK。首个正式版本为 **v0.4.0**，安装包名为 `123PanX-0.4.0.apk`；后续版本沿用相同签名，可覆盖升级。
 
 1. 安装构建生成的 APK，打开 123PanX。
 2. 使用账号 / 手机号和密码登录，或使用官方 123 云盘 App 扫描登录二维码。
@@ -115,7 +118,11 @@
 
 ### 如何检查更新？
 
-点击“我的 → 检查更新”，该入口位于“关于”上方。发现新版本后可打开发布页查看并下载安装；没有可访问的正式版本时会显示相应提示。
+启动时默认自动检查 GitHub 最新正式版，仅发现新版本时提示；可在设置中关闭。点击“我的 → 检查更新”随时手动检查，该入口位于“关于”上方。
+
+更新弹窗中可选 GitHub 原站或 `gh.dpik.top` 镜像。下载完成后校验大小与 GitHub 发布资产的 SHA-256，再请求 Android 系统安装。首次安装更新可能需要允许“安装未知应用”，授权返回后继续安装；系统安装仍由你确认。预发布版和草稿不参与检查。
+
+Debug 包与正式包独立安装，从 Debug 转到正式版需要重新登录；正式版之间覆盖升级保留应用数据。
 
 ### 界面语言怎么切换？
 
@@ -160,7 +167,15 @@ chmod +x gradlew
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-Debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。正式发布需要配置自己的签名密钥。
+Debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。
+
+构建正式包前，通过当前进程环境变量提供签名配置：`PANX_SIGNING_STORE_FILE`（密钥库路径）、`PANX_SIGNING_STORE_PASSWORD`（密钥库密码）、`PANX_SIGNING_KEY_ALIAS`（别名）和 `PANX_SIGNING_KEY_PASSWORD`（私钥密码）。密码从安全凭据存储或 CI Secret 注入，不写入仓库；本地 `.signing/` 目录已排除于 Git。未提供完整签名配置时，Release 打包会失败，避免误发未签名包。
+
+```powershell
+.\gradlew.bat :app:assembleRelease :app:lintRelease
+```
+
+签名 APK 位于 `app/build/outputs/apk/release/app-release.apk`。发布资产统一命名为 `123PanX-版本号.apk`，使用正式标签 `v版本号`，后续版本递增 `versionCode` 并沿用正式签名。GitHub 资产需提供 `sha256:` 摘要；应用不会安装缺少校验信息的发布包。
 
 > [!NOTE]
 > Windows 出现 `Unable to establish loopback connection` 时，确认 Gradle 使用 JDK 21，并将 `TEMP`、`TMP` 与 `jdk.net.unixdomain.tmpdir` 指向已存在的纯英文临时目录。多个设备连接时，可通过 `ANDROID_SERIAL` 指定测试设备。
