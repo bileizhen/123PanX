@@ -12,6 +12,8 @@ import java.net.InetAddress
 import java.net.URI
 import java.util.Base64
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -360,15 +362,18 @@ class PanDownloadResolver(
             val request = Request.Builder().url(url).get().build()
             transfer.newCall(request).execute().use { it.snapshot(FOLLOW_BODY_LIMIT) }
         } catch (error: IOException) {
+            currentCoroutineContext().ensureActive()
             logger.w(LogSource.DOWNLOAD, "跟随下载重定向失败：${error.message.orEmpty()}")
-            return@withContext url
+            // Upstream decodes download-v2 params even when the proxy cannot be reached.
+            // Returning here strands the download on the failed proxy host.
+            null
         }
 
-        val location = if (response.code in REDIRECT_CODES) response.location else null
+        val location = if (response?.code in REDIRECT_CODES) response?.location else null
         if (!location.isNullOrBlank()) {
             return@withContext safeOrOriginal(location, url, "重定向 Location")
         }
-        val href = DownloadUrlCodec.extractHref(response.body)
+        val href = response?.let { DownloadUrlCodec.extractHref(it.body) }
         if (href != null) {
             return@withContext safeOrOriginal(href, url, "HTML href")
         }

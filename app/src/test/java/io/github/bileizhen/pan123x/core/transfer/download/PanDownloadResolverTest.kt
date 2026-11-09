@@ -5,6 +5,9 @@ import io.github.bileizhen.pan123x.core.network.AuthorizationProvider
 import io.github.bileizhen.pan123x.core.network.DeviceProfile
 import io.github.bileizhen.pan123x.core.network.PanApi
 import io.github.bileizhen.pan123x.core.network.PanHttpClientFactory
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -48,9 +51,10 @@ class PanDownloadResolverTest {
     )
 
     /** 传输客户端：把任意 host 重写到 MockWebServer（scheme 降为 http），保留 followRedirects=false。 */
-    private fun transfer(): OkHttpClient = PanHttpClientFactory.transferClient().newBuilder()
+    private fun transfer(proxyFailure: IOException? = null): OkHttpClient = PanHttpClientFactory.transferClient().newBuilder()
         .addInterceptor { chain ->
             val request = chain.request()
+            if (proxyFailure != null && request.url.host == "web-pro2.123952.com") throw proxyFailure
             val target = server.url("/")
             val url = request.url.newBuilder()
                 .scheme("http")
@@ -122,6 +126,37 @@ class PanDownloadResolverTest {
         val outcome = resolver().resolve(source())
 
         assertEquals("https://origin.example.com/f.zip?auto_redirect=0", (outcome as ResolveOutcome.Success).url)
+    }
+
+    @Test
+    fun proxyNetworkFailureStillDecodesParamsAndResolvesCdnJsonRedirect() = runTest {
+        for (failure in listOf(UnknownHostException("proxy DNS failed"), SocketTimeoutException("proxy timeout"))) {
+            server.enqueue(okDownload("""{"DownloadUrl":"https://origin.example.com/f.zip"}"""))
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
+                .setBody("""{"code":0,"data":{"RedirectUrl":"https://cdn.example.com/f.zip"}}"""))
+            val resolver = PanDownloadResolver(api(), transfer(failure), logger, { false })
+
+            val outcome = resolver.resolve(source())
+
+            assertEquals("https://cdn.example.com/f.zip", (outcome as ResolveOutcome.Success).url)
+            assertEquals("/a/api/file/download_info", server.takeRequest().path)
+            val preflight = server.takeRequest()
+            assertEquals("/f.zip?auto_redirect=0", preflight.path)
+            assertEquals("bytes=0-0", preflight.getHeader("Range"))
+        }
+        assertEquals(4, server.requestCount)
+    }
+
+    @Test
+    fun proxyNetworkFailureDoesNotRequestUnsafeDecodedUrl() = runTest {
+        val raw = "https://127.0.0.1/private.bin"
+        server.enqueue(okDownload("""{"DownloadUrl":"$raw"}"""))
+        val resolver = PanDownloadResolver(api(), transfer(UnknownHostException("proxy DNS failed")), logger, { false })
+
+        val outcome = resolver.resolve(source())
+
+        assertEquals(DownloadUrlCodec.rewriteDownloadUrl(raw), (outcome as ResolveOutcome.Success).url)
+        assertEquals(1, server.requestCount)
     }
 
     @Test
