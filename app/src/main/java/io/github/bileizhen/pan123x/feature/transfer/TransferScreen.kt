@@ -62,13 +62,6 @@ import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 
-/** UI 侧可"继续"的停止态（不含 WAITING_USER：冲突要走选择弹窗；不含 CANCELED：重试语义不明）。 */
-private val RESUMABLE_STATES = setOf(
-    TransferState.PAUSED,
-    TransferState.WAITING_NETWORK,
-    TransferState.FAILED,
-)
-
 /** 传输工作台：上传/下载共用，速度汇总为采样估算值。 */
 @Composable
 fun TransferScreen(viewModel: TransferViewModel, onOpenDetail: (String) -> Unit) {
@@ -124,7 +117,7 @@ fun TransferScreen(viewModel: TransferViewModel, onOpenDetail: (String) -> Unit)
                 StaggeredEntrance(index) {
                 val colors = MiuixTheme.colorScheme
                 val canPause = task.state in ACTIVE_TRANSFER_STATES
-                val canResume = task.state in RESUMABLE_STATES
+                val canResume = task.canResume
                 SwipeActionRow(
                     start = if (canPause || canResume) SwipeAction(if (canPause) "暂停" else "继续", if (canPause) PanIcons.Pause else PanIcons.Play,
                         listOf(colors.primary.copy(alpha = .6f), colors.primary)) else null,
@@ -226,7 +219,7 @@ private fun TransferTaskCard(
                     task.state in ACTIVE_TRANSFER_STATES ->
                         TransferPrimaryAction(PanIcons.Pause, "暂停", onPause)
 
-                    task.state in RESUMABLE_STATES ->
+                    task.canResume ->
                         TransferPrimaryAction(PanIcons.Play, "继续", onResume)
                     else -> TransferPrimaryAction(PanIcons.Info, "任务详情", onOpen)
                 }

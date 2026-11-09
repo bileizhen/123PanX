@@ -104,6 +104,29 @@ class TransferViewModelTest {
 
     // ---- 筛选与状态 ----
 
+    @Test
+    fun recoveredTasksCanResumeButUploadConflictsAndTerminalTasksCannot() {
+        val download = task("download", TransferState.WAITING_USER)
+        val upload = task("upload", TransferState.WAITING_USER, TransferDirection.UPLOAD)
+        val conflict = task("conflict", TransferState.WAITING_USER, TransferDirection.UPLOAD, error = "同名冲突")
+        val completed = task("done", TransferState.COMPLETED)
+        val canceled = task("canceled", TransferState.CANCELED)
+        assertTrue(download.canResume)
+        assertTrue(upload.canResume)
+        assertEquals(false, conflict.canResume)
+        assertEquals(false, completed.canResume)
+        assertEquals(false, canceled.canResume)
+
+        val source = FakeTransferTasksSource()
+        source.rows.value = listOf(download, upload, conflict, completed, canceled)
+        val model = viewModel(source)
+        model.selectFilter(TransferFilter.STOPPED)
+        model.resumeVisible()
+        assertEquals(2, source.resumed)
+        assertTrue(source.conflicts.isEmpty())
+        assertEquals("conflict", model.uiState.value.conflictTask?.taskId)
+    }
+
     @Test fun queuedDownloadNavigationClearsOldSearchAndShowsActiveWithPartialFailure() {
         val source = FakeTransferTasksSource()
         source.rows.value = listOf(task("new-download", TransferState.QUEUED), task("old", TransferState.COMPLETED))
@@ -168,7 +191,8 @@ class TransferViewModelTest {
     @Test fun searchAndBulkActionsOnlyAffectMatchingEligibleTasks() {
         val source = FakeTransferTasksSource()
         source.rows.value = listOf(task("wanted-run", TransferState.RUNNING), task("other-run", TransferState.RUNNING),
-            task("wanted-paused", TransferState.PAUSED), task("wanted-conflict", TransferState.WAITING_USER))
+            task("wanted-paused", TransferState.PAUSED),
+            task("wanted-conflict", TransferState.WAITING_USER, TransferDirection.UPLOAD, error = "同名冲突"))
         val model = viewModel(source)
         model.selectFilter(TransferFilter.ALL)
         model.setSearch("  WANTED  ")

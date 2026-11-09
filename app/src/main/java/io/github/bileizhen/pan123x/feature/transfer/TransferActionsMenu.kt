@@ -55,9 +55,8 @@ internal fun TransferActionsMenu(show: Boolean, state: TransferUiState, onDismis
             exit = fadeOut(tween(100)) + scaleOut(tween(120), targetScale = .96f, transformOrigin = TransformOrigin(1f, 0f))) {
             Column(Modifier.width(220.dp).testTag("transfer_actions_menu").shadow(8.dp, shape).clip(shape)
                 .background(colors.surfaceContainer).border(.5.dp, colors.onSurface.copy(alpha = .08f), shape).padding(6.dp)) {
-                val resumable = setOf(TransferState.PAUSED, TransferState.WAITING_NETWORK, TransferState.FAILED)
                 TransferMenuItem(uiText("暂停本组"), PanIcons.Pause, "transfer_pause_visible", show && state.visible.any { it.state in ACTIVE_TRANSFER_STATES }) { pending = onPause; onDismiss() }
-                TransferMenuItem(uiText("继续本组"), PanIcons.Play, "transfer_resume_visible", show && state.visible.any { it.state in resumable }) { pending = onResume; onDismiss() }
+                TransferMenuItem(uiText("继续本组"), PanIcons.Play, "transfer_resume_visible", show && state.visible.any { it.canResume }) { pending = onResume; onDismiss() }
                 TransferMenuItem(uiText("清除已完成"), PanIcons.Trash, "transfer_clear_finished", show && state.tasks.any { it.state in setOf(TransferState.COMPLETED, TransferState.CANCELED) }) { pending = onClear; onDismiss() }
             }
         }

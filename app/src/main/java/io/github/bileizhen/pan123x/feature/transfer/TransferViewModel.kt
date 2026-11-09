@@ -91,6 +91,10 @@ fun TransferDirection.label(): String = when (this) {
 val TransferTaskEntity.isConflict: Boolean
     get() = state == TransferState.WAITING_USER && error?.contains(CONFLICT_MARKER) == true
 
+/** 重启恢复的 WAITING_USER 可继续；上传同名冲突仍须先选择处理方式。 */
+val TransferTaskEntity.canResume: Boolean
+    get() = state in STOPPED_TRANSFER_STATES && !isConflict
+
 /** 冲突判别标记；显示层与上传域文案（UploadMessages.CONFLICT_TITLE"存在同名文件"）保持同口径。 */
 private const val CONFLICT_MARKER = "同名"
 
@@ -242,7 +246,7 @@ class TransferViewModel(
     fun showQueuedDownloads(message: String? = null) { query.update { it.copy(filter = TransferFilter.ACTIVE, search = "", searchOpen = false, error = message) } }
     fun dismissError() { query.update { it.copy(error = null) } }
     fun pauseVisible() { uiState.value.visible.filter { it.state in ACTIVE_TRANSFER_STATES }.forEach { pause(it.taskId) } }
-    fun resumeVisible() { uiState.value.visible.filter { it.state in setOf(TransferState.PAUSED, TransferState.WAITING_NETWORK, TransferState.FAILED) }.forEach { resume(it.taskId) } }
+    fun resumeVisible() { uiState.value.visible.filter { it.canResume }.forEach { resume(it.taskId) } }
 
     fun pause(taskId: String) = withTaskAccount(taskId) { account -> source.pause(account, taskId) }
 
