@@ -4,6 +4,37 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ShareLinkParserTest {
+    @Test fun recognizesShareSubdomainInPlainTextAndMarkdown() {
+        val url = "https://1234567890.share.123pan.cn/123pan/abcDEF-qXRzA"
+        for (text in listOf(url, "[$url]($url)", "分享文件：$url", url.removePrefix("https://"))) {
+            assertEquals(SharedLink(url, ""), ShareLinkParser.parse(text))
+        }
+        assertEquals("https://share.123pan.cn/123pan/abc-def", ShareLinkParser.parse("http://share.123pan.cn/123pan/abc-def")?.url)
+    }
+
+    @Test fun shareSubdomainSupportsPasswordAndDeduplicatesTracking() {
+        val url = "https://1234567890.share.123pan.cn/123pan/abc-def"
+        val expected = SharedLink("$url?pwd=aB12", "aB12")
+        assertEquals(expected, ShareLinkParser.parse("$url?pwd=aB12&tracking=1"))
+        assertEquals(expected, ShareLinkParser.parse("$url 提取码：aB12"))
+        val gate = ShareClipboardGate()
+        assertEquals(expected, gate.take("$url?pwd=aB12&tracking=1"))
+        assertNull(gate.take("$url 提取码：aB12"))
+    }
+
+    @Test fun shareSubdomainRejectsSpoofedHostsAndRoutes() {
+        for (text in listOf(
+            "https://123.share.123pan.cn.evil.com/123pan/abc-def",
+            "https://evil.com/123.share.123pan.cn/123pan/abc-def",
+            "https://evil.com@123.share.123pan.cn/123pan/abc-def",
+            "https://evil.123.share.123pan.cn/123pan/abc-def",
+            "https://evil.share.123pan.cn/123pan/abc-def",
+            "https://123.share.123pan.cn:8080/123pan/abc-def",
+            "https://123.share.123pan.cn/s/abc-def",
+            "https://123.share.123pan.cn/123pan/abc-def/other",
+        )) assertNull(text, ShareLinkParser.parse(text))
+    }
+
     @Test fun findsLinkAndCodeInFullShareMessage() {
         val link = ShareLinkParser.parse("分享文档：https://www.123pan.cn/s/abc-def 提取码：aB12")!!
         assertEquals("https://www.123pan.cn/s/abc-def", link.url)

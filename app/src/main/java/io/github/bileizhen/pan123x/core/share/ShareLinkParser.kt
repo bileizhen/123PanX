@@ -11,8 +11,9 @@ data class SharedLink(val url: String, val password: String) {
 /** Only known official share pages; never treat an arbitrary CDN URL as a share. */
 object ShareLinkParser {
     private val hosts = setOf("123pan.cn", "123pan.com", "123684.com", "123865.com", "123912.com")
-    private val mobileHost = Regex("(?:[0-9]{1,63}\\.)?mshare\\.123pan\\.cn")
-    private val links = Regex("(?i)(?:https?://)?(?:(?:www\\.)?123(?:pan\\.(?:cn|com)|684\\.com|865\\.com|912\\.com)/s/|(?:[0-9]{1,63}\\.)?mshare\\.123pan\\.cn/123pan/)[A-Za-z0-9_-]+(?:\\.html)?(?:\\?[^\\s<>\"'，。；）)]+)?")
+    private const val SHARE_PAGE_HOST = "(?:[0-9]{1,63}\\.)?m?share\\.123pan\\.cn"
+    private val sharePageHost = Regex(SHARE_PAGE_HOST)
+    private val links = Regex("(?i)(?:https?://)?(?:(?:www\\.)?123(?:pan\\.(?:cn|com)|684\\.com|865\\.com|912\\.com)/s/|$SHARE_PAGE_HOST/123pan/)[A-Za-z0-9_-]+(?:\\.html)?(?:\\?[^\\s<>\"'，。；）)]+)?")
     private val code = Regex("(?i)(?:提取码|提取密码|访问码|密码|extraction\\s*code|password|code)\\s*[:：=]?\\s*([A-Za-z0-9]{4})(?![A-Za-z0-9])")
 
     fun parse(text: String): SharedLink? {
@@ -24,9 +25,9 @@ object ShareLinkParser {
             val raw = match.value.replace("\\&", "&").let { if (it.startsWith("http", true)) it else "https://$it" }
             val uri = runCatching { URI(raw) }.getOrNull() ?: continue
             val host = uri.host?.lowercase() ?: continue
-            val mobile = mobileHost.matches(host)
-            if ((!mobile && host.removePrefix("www.") !in hosts) || uri.userInfo != null || uri.port != -1) continue
-            val pathPrefix = if (mobile) "/123pan/" else "/s/"
+            val sharePage = sharePageHost.matches(host)
+            if ((!sharePage && host.removePrefix("www.") !in hosts) || uri.userInfo != null || uri.port != -1) continue
+            val pathPrefix = if (sharePage) "/123pan/" else "/s/"
             if (!uri.path.startsWith(pathPrefix)) continue
             val key = uri.path.removePrefix(pathPrefix).removeSuffix(".html")
             if (!key.matches(Regex("[A-Za-z0-9_-]{2,128}"))) continue
@@ -37,9 +38,9 @@ object ShareLinkParser {
             }
             val nearby = text.substring(match.range.last + 1).take(160)
             val password = queryCode ?: code.find(nearby)?.groupValues?.get(1).orEmpty()
-            // Mobile pages use a different route. Keep the extraction code in the URL,
+            // share/mshare pages use a different route. Keep the extraction code in the URL,
             // but omit tracking/navigation actions from the copied share message.
-            val query = if (mobile && password.isNotBlank()) "?pwd=$password" else ""
+            val query = if (sharePage && password.isNotBlank()) "?pwd=$password" else ""
             return SharedLink("https://$host$pathPrefix$key$query", password)
         }
         return null
