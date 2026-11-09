@@ -49,6 +49,12 @@ Apache-2.0 原文见随附 `app/src/main/assets/APACHE-2.0.txt`。AndroidX、Miu
 
 ## 协议参考
 
+分享文件可选状态于 2026-11-09 对照官方分享页脚本 [`index.fcec34f7.js`](https://statics.123pan.com/assets/js/index.fcec34f7.js) 的 `getCheckboxProps`：普通文件在 Etag 为空或 Status ≥ 100 时禁用；Status=0 可正常选择，目录不套用普通文件条件。此处文件 Status 与异步复制任务 status 的完成值无关。
+
+下载地址解析保留上游 `download_url.py#resolve_download_url` 的异常兜底：中转域名 DNS 或连接失败后，仍尝试解码 `download-v2` 的 `params`，通过 HTTPS / 非私有地址校验后继续原始下载地址的解析。避免将不可访问的中转地址直接交给下载引擎反复重试。
+
+2026-11-09 核对基准：[fluent-dev / e9a14962](https://github.com/123panNextGen/123pan/tree/e9a14962ff2db4c4ce601e823752f168b2be3191)。该版本与 `main` 的 API 实现一致；相对本地旧参考 `05eb98c1`，接口域名、路径、请求参数及客户端头未变。本次补齐 `upload_service.py` 的 `session_expired` 响应识别，覆盖上传申请、已传分片查询、预签名、合并及完成确认，并兼容本项目已有的 `msg` 别名。失效结果统一交给现有上传错误处理，不在协议层自动重发上传 POST。
+
 [123panNextGen/123pan](https://github.com/123panNextGen/123pan)（`fluent-dev` 分支），GPL-3.0：123 云盘协议的唯一可信参考。M1 起，登录 / 用户信息 / 会话过期重登的行为按其 `session.py`、`model.py` 用 Kotlin 重写（未逐行翻译其 Python 代码）；请求头所需的设备池目录（`devices.py` 的 osversion / devicetype 清单）迁移至 `core/account/DeviceIdentity.kt` 并保留来源注释。后续文件、分享、离线与传输协议同样只以此仓库为准，不采信网络零散资料。
 
 云盘信息与登录设备展示依据同仓库 `CloudUserInfoModel`、`DeviceItemModel`、`DeviceListResponse`、`NetSession.get_device_list` 和 `cloud_interface.py` 的行为重写：复用字段兼容规则、设备接口参数与容量口径，不迁入 Python / Qt 界面或设备删除逻辑。
