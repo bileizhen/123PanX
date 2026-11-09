@@ -89,7 +89,7 @@ class SharedFilesDesignTest {
         assertEquals(1, actions.downloads)
     }
     @Test fun filteredSelectionSortAndGridRetainSelectionAndFooter() {
-        val actions = Actions(listOf(file(1, "one.zip"), file(2, "two.zip"), file(3, "one-invalid.zip", status = 0)))
+        val actions = Actions(listOf(file(1, "one.zip"), file(2, "two.zip"), file(3, "one-invalid.zip", status = 100)))
         val vm = show(actions)
         compose.onNodeWithTag("shared-files-search").performTextInput("one")
         compose.onNodeWithTag("shared-files-search").performImeAction()

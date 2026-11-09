@@ -236,7 +236,7 @@ class SharedFilesViewModelTest {
 
     @Test fun searchSelectsOnlyVisibleAvailableFilesAndDoesNotLeakHiddenSelection() {
         val actions = FakeSharedFilesActions()
-        actions.enqueueList(ApiResult.Success(FileListDto(listOf(file(1, "one.zip"), file(2, "two.zip"), file(3, "one-invalid.zip").copy(status = 0)), 3, "-1", 3, true)))
+        actions.enqueueList(ApiResult.Success(FileListDto(listOf(file(1, "one.zip"), file(2, "two.zip"), file(3, "one-invalid.zip").copy(status = 100)), 3, "-1", 3, true)))
         val vm = model(actions = actions)
         vm.toggle(2)
         vm.search("ONE")
@@ -257,6 +257,29 @@ class SharedFilesViewModelTest {
         assertEquals(listOf(2L, 3L, 1L), vm.state.value.visibleFiles.map { it.fileId })
         assertTrue(vm.state.value.grid)
         assertEquals(setOf(1L), vm.state.value.selected)
+    }
+
+    @Test fun normalShareStatusZeroCanBeSelectedAndDownloaded() {
+        val actions = FakeSharedFilesActions()
+        actions.enqueueList(ApiResult.Success(FileListDto(listOf(file(1).copy(status = 0)), 1, "-1", 1, true)))
+        val vm = model(actions = actions)
+        assertEquals("有效", vm.state.value.files.single().statusLabel)
+        vm.selectAll()
+        assertEquals(setOf(1L), vm.state.value.selected)
+        vm.download()
+        assertEquals(1, actions.downloadCalls.size)
+    }
+
+    @Test fun shareAvailabilityMatchesOfficialFileAndFolderRules() {
+        for (status in listOf(null, 0, 1, 2, 99)) assertTrue(file(1).copy(status = status).available)
+        for (status in listOf(100, 120, 999)) {
+            val item = file(1).copy(status = status)
+            assertTrue(!item.available)
+            assertEquals("不可用", item.statusLabel)
+        }
+        assertTrue(!file(1).copy(etag = "", status = 0).available)
+        assertTrue(file(1, folder = true).copy(etag = "", status = 0).available)
+        assertEquals("状态未提供", file(1).statusLabel)
     }
 
     @Test fun metadataFailureDoesNotBlockFilesAndExpiredSharesCannotQueueActions() {

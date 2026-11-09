@@ -51,9 +51,14 @@ data class SharedFilesState(
     val selectedFiles get() = files.filter { it.fileId in selected && it.available && info?.expired != true }
 }
 
-// Missing status means the API did not supply a verdict; never label it "valid".
-internal val FileItemDto.available get() = status == null || status == 2
-internal val FileItemDto.statusLabel get() = when (status) { null -> "状态未提供"; 2 -> "有效"; else -> "不可用" }
+// Official share web client: a regular file is disabled for an empty Etag or Status >= 100.
+// Status 0 is a normal file, not the status of an asynchronous copy task (where 2 means done).
+internal val FileItemDto.available get() = isFolder || (etag.isNotBlank() && (status == null || status < 100))
+internal val FileItemDto.statusLabel get() = when {
+    !available -> "不可用"
+    status == null -> "状态未提供"
+    else -> "有效"
+}
 
 class SharedFilesViewModel(private val link: SharedLink, private val actions: SharedFilesActions) : ViewModel() {
     private val mutableState = MutableStateFlow(SharedFilesState(password = link.password))
