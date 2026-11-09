@@ -168,6 +168,48 @@ class PanUploadApiTest {
         assertTrue(result is ApiResult.SessionExpired)
     }
 
+    @Test
+    fun sessionExpiredMessageIsRecognizedByEveryUploadEndpointWithoutRetry() = runTest {
+        val api = api()
+        val calls: List<suspend () -> ApiResult<*>> = listOf(
+            { api.requestUpload("a.bin", 1024, "e", 7, 0) },
+            { api.listUploadedParts("b", "k", "u", "sn") },
+            { api.presignParts("b", "k", "u", "sn", 1, 2) },
+            { api.completeMultipartUpload("b", "k", "u", "sn") },
+            { api.finishUpload(5) },
+        )
+        // Upstream checks the marker independently of the numeric code, before parsing data.
+        for (code in listOf(-1, 0, 401, 500, 5060)) {
+            for (call in calls) {
+                server.enqueue(MockResponse().setBody("""{"code":$code,"message":"auth: session_expired"}"""))
+                val before = server.requestCount
+                assertEquals(ApiResult.SessionExpired, call())
+                assertEquals(before + 1, server.requestCount)
+            }
+        }
+    }
+
+    @Test
+    fun sessionExpiredMessageSupportsMsgAliasAndMissingCode() = runTest {
+        server.enqueue(MockResponse().setBody("""{"msg":"session_expired"}"""))
+        assertEquals(ApiResult.SessionExpired, api().finishUpload(5))
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun unrelatedUploadErrorsRemainApiErrors() = runTest {
+        server.enqueue(MockResponse().setBody("""{"code":401,"message":"permission denied"}"""))
+        assertEquals(ApiResult.ApiError(401, "permission denied"), api().finishUpload(5))
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun uploadMessageRuleDoesNotChangeOtherEndpoints() = runTest {
+        server.enqueue(MockResponse().setBody("""{"code":401,"message":"session_expired"}"""))
+        assertEquals(ApiResult.ApiError(401, "session_expired"), api().renameFile(5, "new.bin"))
+        assertEquals(1, server.requestCount)
+    }
+
     // ------------------------------------------------------------------
     // s3_list_upload_parts —— 小写 storageNode
     // ------------------------------------------------------------------

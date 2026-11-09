@@ -18,6 +18,6 @@ sealed interface ApiResult<out T> {
     /** 响应不是合法 JSON，或成功 code 下 data 缺失/不符。 */
     data class ParseError(val message: String) : ApiResult<Nothing>
 
-    /** body code == 2，token 已过期，需要重新登录。 */
+    /** body code == 2 或上传接口返回 session_expired，token 已过期，需要重新登录。 */
     object SessionExpired : ApiResult<Nothing>
 }

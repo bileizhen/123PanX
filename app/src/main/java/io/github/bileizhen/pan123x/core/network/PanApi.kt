@@ -549,6 +549,7 @@ class PanApi(
             successCodes = UPLOAD_REQUEST_SUCCESS_CODES,
             retryOnServerError = false,
             readTimeoutSeconds = UPLOAD_READ_TIMEOUT_SECONDS,
+            detectSessionExpiredMessage = true,
         )
         return execute(spec) { root, _ -> ApiResult.Success(parseUploadRequest(root)) }
     }
@@ -573,6 +574,7 @@ class PanApi(
             successCodes = setOf(UPLOAD_SUCCESS_CODE),
             retryOnServerError = false,
             readTimeoutSeconds = UPLOAD_READ_TIMEOUT_SECONDS,
+            detectSessionExpiredMessage = true,
         )
         return execute(spec) { root, _ -> ApiResult.Success(parseUploadedParts(root)) }
     }
@@ -602,6 +604,7 @@ class PanApi(
             successCodes = setOf(UPLOAD_SUCCESS_CODE),
             retryOnServerError = false,
             readTimeoutSeconds = UPLOAD_READ_TIMEOUT_SECONDS,
+            detectSessionExpiredMessage = true,
         )
         return execute(spec) { root, _ -> ApiResult.Success(parsePresignedUrls(root)) }
     }
@@ -626,6 +629,7 @@ class PanApi(
             successCodes = setOf(UPLOAD_SUCCESS_CODE),
             retryOnServerError = false,
             readTimeoutSeconds = UPLOAD_READ_TIMEOUT_SECONDS,
+            detectSessionExpiredMessage = true,
         )
         return execute(spec) { _, _ -> ApiResult.Success(Unit) }
     }
@@ -639,6 +643,7 @@ class PanApi(
             successCodes = setOf(UPLOAD_SUCCESS_CODE),
             retryOnServerError = false,
             readTimeoutSeconds = UPLOAD_READ_TIMEOUT_SECONDS,
+            detectSessionExpiredMessage = true,
         )
         return execute(spec) { _, _ -> ApiResult.Success(Unit) }
     }
@@ -922,6 +927,8 @@ class PanApi(
         val query: Map<String, String>? = null,
         val readTimeoutSeconds: Int? = null,
         val authorization: String? = null,
+        /** upload_service.py also identifies expired sessions by a message marker, regardless of code. */
+        val detectSessionExpiredMessage: Boolean = false,
     )
 
     /** 一次 HTTP 往返结果：HTTP 状态码与包络解析结果分开携带。 */
@@ -1027,6 +1034,8 @@ class PanApi(
         }
         val result = when {
             envelope.code == SESSION_EXPIRED_CODE -> ApiResult.SessionExpired
+            spec.detectSessionExpiredMessage &&
+                (envelope.message ?: envelope.msg).orEmpty().contains("session_expired") -> ApiResult.SessionExpired
             envelope.code in spec.successCodes -> parse(root, httpCode)
             else -> ApiResult.ApiError(envelope.code, envelope.message ?: envelope.msg ?: "")
         }
